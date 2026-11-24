@@ -589,7 +589,16 @@ function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
+/** الإعداد التلقائي: أول طلب بعد النشر ينشئ الشيت والمجلدات إن لم تكن موجودة */
+function ensureSetup_() {
+  if (PropertiesService.getScriptProperties().getProperty('SHEET_ID')) return;
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try { if (!PropertiesService.getScriptProperties().getProperty('SHEET_ID')) setup(); }
+  finally { lock.releaseLock(); }
+}
+
 function doPost(e) {
+  try { ensureSetup_(); } catch (err) { return json_({ ok: false, error: 'تعذّر تجهيز النظام: ' + err.message }); }
   let body;
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); }
   catch (err) { return json_({ ok: false, error: 'طلب غير صالح.' }); }
@@ -605,5 +614,6 @@ function doPost(e) {
 
 /** GET يرجع حالة فقط (للتأكد أن النشر يعمل) */
 function doGet() {
-  return json_({ ok: true, service: 'sulukera-certificates', time: new Date().toISOString() });
+  ensureSetup_();
+  return json_({ ok: true, service: 'sulukera-certificates', ready: true, time: new Date().toISOString() });
 }

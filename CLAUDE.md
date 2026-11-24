@@ -61,7 +61,11 @@
 - **تم (2026-11-24):** الهيكل، `backend/Code.gs` كـ API، `index.html` (البوابة + التحقق `?v=`)، `admin.html`، التوليد في المتصفح (`assets/generate.js`)،
   مكتبات jsPDF و qrcode-generator منسوخة في `assets/vendor/` (لا اعتماد على CDN)، `CNAME`.
 - **الاختبارات:** `npm test` (الخلفية على محاكاة Apps Script في `tests/gas-mock.js` + مطابقة الرسم للعينة)، و`npm run test:e2e` (المسار كاملاً في Chromium عبر Playwright).
-- **بانتظار مريم:** `clasp login` ونشر الخلفية ← وضع رابط الـ Web app في `assets/config.js` (`API_URL`)؛ تفعيل GitHub Pages؛ سجل CNAME في GoDaddy؛
+- **الخلفية منشورة (2026-11-24):** مشروع Apps Script `1ks2Mrz4-NdF1Htsooupd3XHJzKiW5M5_CBIXgY4R1v8Mez6uB5bMTWcv` بحساب maryam@sulukera.com.
+  النشر الثابت `AKfycbwHZZtEpJylaLwP8Ta1QSlIGxe_tjZs4AAGV-do5MPcjHqAfjgUN0Or6asoInbYJzCI` (رابطه في `assets/config.js`).
+  التحديث: `npm run clasp:push` ثم `npm run clasp:deploy` (نفس المعرّف فلا يتغير الرابط). `clasp login` في جلسة سحابية: `--no-localhost`،
+  ومريم تفتح الرابط وترسل عنوان localhost الناتج. `setup()` يعمل تلقائياً عند أول طلب (`ensureSetup_`).
+- **سابقاً بانتظار مريم:** `clasp login` ونشر الخلفية ← وضع رابط الـ Web app في `assets/config.js` (`API_URL`)؛ تفعيل GitHub Pages؛ سجل CNAME في GoDaddy؛
   تأكيد مصدر نظام العمليات؛ ملفات PSD للدورات الباقية.
 - الإعدادات القابلة للتغيير (المشرفون، رابط الموقع، نظام العمليات) في `DEFAULTS` أعلى `backend/Code.gs` ويمكن تجاوزها من Script Properties.
 
