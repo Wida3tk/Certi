@@ -33,9 +33,8 @@
   وخيار «تعديل الاسم» برسوم، ويمر على المحاسب لتأكيد السداد ثم يُعاد الإصدار.
 - **المحاسب:** `raljalajil@sulukera.com` (`DEFAULTS.FINANCE`).
 - **الفريق كله بصلاحيات كاملة** («فريق واحد»): maryam@، care@، ehamdan@ (مساعد إداري)، raljalajil@ (محاسب) — `DEFAULTS.ADMINS`.
-- **المرسل لازم care@sulukera.com** (`DEFAULTS.SENDER_EMAIL`)، والبرامج الطويلة لها عناوين خاصة (`senderEmail` في `courses.json`).
-  الإرسال عبر `sendMail_`: GmailApp بـ `from` إذا كان العنوان alias («إرسال البريد باسم») في Gmail صاحب السكربت، وإلا MailApp مع الرد إلى العنوان.
-  يحتاج صلاحية `https://mail.google.com/` (أُضيفت 2026-11-24 ← لزم إعادة تفويض مريم برابط exec).
+- **المرسل care@sulukera.com لكل الشهادات:** السكربت يعمل بحساب care@ نفسه، و`sendMail_` يرسل بـ MailApp (لا aliases ولا صلاحية Gmail).
+  `setup()` يشارك مجلد النظام مع بقية الفريق كمحرّرين.
 - **شهادات الإشراف** (مجلد «الإشراف» في Drive، 9 قوالب): إصدار فقط بلا طلب من المتدرب. المشرفة تُدخل العنوان (متغيّر) والأسماء والتواريخ،
   والنظام يصدرها بالقالب. لم تُبنَ بعد.
 - **ملاحظات القوالب (فحص 2026-11-24):** 43 قالباً بنفس التخطيط (الاسم Tangerine 220.8، التواريخ Cardo 75). ملفات محتواها لا يطابق اسمها:
@@ -65,7 +64,11 @@
 - **تم (2026-11-24):** الهيكل، `backend/Code.gs` كـ API، `index.html` (البوابة + التحقق `?v=`)، `admin.html`، التوليد في المتصفح (`assets/generate.js`)،
   مكتبات jsPDF و qrcode-generator منسوخة في `assets/vendor/` (لا اعتماد على CDN)، `CNAME`.
 - **الاختبارات:** `npm test` (الخلفية على محاكاة Apps Script في `tests/gas-mock.js` + مطابقة الرسم للعينة)، و`npm run test:e2e` (المسار كاملاً في Chromium عبر Playwright).
-- **الخلفية منشورة (2026-11-24):** مشروع Apps Script `1ks2Mrz4-NdF1Htsooupd3XHJzKiW5M5_CBIXgY4R1v8Mez6uB5bMTWcv` بحساب maryam@sulukera.com.
+- **الخلفية تعمل بحساب care@sulukera.com (قرار مريم: كل الإيميلات تخرج من care@):** مشروع Apps Script `1--yJaQSCQjXrvmTnGyYjt0SrTbp0yczBxb3rqljL1cMfvU60FCYQQA3j`،
+  النشر الثابت `AKfycbyMiZgi2sRlne0uFF0YXre7GymAwLSyESqFUyDiVyY0e590qbUFkP98n_I0oxa5tlc`. سجّل `clasp login` بحساب care@ (لا maryam@).
+  المشروع القديم على maryam@ (`1ks2Mrz4...`, نشر `AKfycbwHZZ...`) مهجور — يُوقف نشره بعد تأكد عمل care@.
+  البرامج الطويلة: «إيميل مخصص» = نص إيميل خاص بالبرنامج (لا مرسل مختلف) — بانتظار نصوص مريم.
+- (تاريخي) **الخلفية منشورة أولاً (2026-11-24):** مشروع Apps Script `1ks2Mrz4-NdF1Htsooupd3XHJzKiW5M5_CBIXgY4R1v8Mez6uB5bMTWcv` بحساب maryam@sulukera.com.
   النشر الثابت `AKfycbwHZZtEpJylaLwP8Ta1QSlIGxe_tjZs4AAGV-do5MPcjHqAfjgUN0Or6asoInbYJzCI` (رابطه في `assets/config.js`).
   التحديث: `npm run clasp:push` ثم `npm run clasp:deploy` (نفس المعرّف فلا يتغير الرابط). `clasp login` في جلسة سحابية: `--no-localhost`،
   ومريم تفتح الرابط وترسل عنوان localhost الناتج. `setup()` يعمل تلقائياً عند أول طلب (`ensureSetup_`).

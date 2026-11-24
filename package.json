@@ -7,7 +7,7 @@
     "test:e2e": "node tests/e2e.test.js",
     "preview": "node tools/preview.js",
     "clasp:push": "cd backend && npx @google/clasp@3.1.0 push -f",
-    "clasp:deploy": "cd backend && npx @google/clasp@3.1.0 deploy -i AKfycbwHZZtEpJylaLwP8Ta1QSlIGxe_tjZs4AAGV-do5MPcjHqAfjgUN0Or6asoInbYJzCI"
+    "clasp:deploy": "cd backend && npx @google/clasp@3.1.0 deploy -i AKfycbyMiZgi2sRlne0uFF0YXre7GymAwLSyESqFUyDiVyY0e590qbUFkP98n_I0oxa5tlc"
   },
   "devDependencies": {
     "canvas": "^3.1.0",
