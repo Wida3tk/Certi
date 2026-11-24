@@ -67,7 +67,7 @@ async function loadPortal(preloaded) {
 
 function renderMine(list) {
   if (!list.length) { $('mineList').innerHTML = '<p class="hint">لا توجد طلبات بعد.</p>'; return; }
-  const clrNote = r => !r.clearance || r.clearance === CLR.SIGNED ? '' :
+  const clrNote = r => !r.clearance || r.clearance === CLR.SIGNED || r.clearance === CLR.NONE ? '' :
     '<div class="hint">المخالصة المالية: ' + esc(r.clearance === CLR.SIGN ? 'جاهزة لتوقيعك' : r.clearance === CLR.DUE ? 'بانتظار إتمام السداد' : 'قيد الإعداد لدى المالية') + '</div>';
   $('mineList').innerHTML = '<div class="tablewrap"><table><tr><th>الدورة</th><th>تاريخ الطلب</th><th>الحالة</th><th></th></tr>' +
     list.map(r => '<tr><td>' + esc(r.course) + '</td><td>' + esc(r.date) + '</td><td>' + pill(r.status === ST.HELD ? 'معتمدة، تُرسل بعد المخالصة' : r.status) +

@@ -526,4 +526,46 @@ test('طلب قائم قبل تفعيل المخالصة لبرنامجه يُع
   assert.strictEqual(env.api('adminClearance', { token: ta, id, data: { outcome: 'due' } }).ok, true);
 });
 
+test('مخالصة اختيارية (OBM-P) بالتحويل اليدوي، و«لا يحتاج مخالصة» يطلق الشهادة المعلّقة', () => {
+  const courses = JSON.stringify([
+    { id: 'persuasion-influence', nameAr: 'فن الإقناع والتأثير', name: 'Persuasion', type: 'short', active: true },
+    { id: 'obm-p', nameAr: 'رخصة الممارس OBM-P', name: 'OBM-P', type: 'long', active: true },
+    { id: 'qasp-s', nameAr: 'QASP-S', name: 'QASP-S', type: 'long', clearance: true, active: true }]);
+  const env = createEnv({ coursesJson: courses }); env.ctx.setup();
+  const t = login(env, 'p@x.com'); const ta = adminLogin(env, ADMIN);
+  // OBM-P: لا مخالصة تلقائياً، لكن يمكن تحويله
+  const id = env.api('submitRequest', { token: t, data: form({ courseIds: ['obm-p'] }) }).data.id;
+  let g = env.api('adminGet', { token: ta, id }).data;
+  assert.strictEqual(g.clearance, ''); assert.strictEqual(g.canStartClr, true);
+  env.mails.length = 0;
+  const st = env.api('adminClearanceStart', { token: ta, id });
+  assert.strictEqual(st.ok, true, st.error);
+  assert.ok(env.mails.some(m => m.to === 'raljalajil@sulukera.com'), 'finance notified');
+  assert.strictEqual(env.api('adminGet', { token: ta, id }).data.clearance, 'بانتظار المالية');
+  assert.match(env.api('adminClearanceStart', { token: ta, id }).error, /مسبقاً/);
+  // المتدرب لا يستطيع التحويل
+  assert.strictEqual(env.api('adminClearanceStart', { token: t, id }).ok, false);
+  // QASP-S: مخالصة تلقائياً، واعتماد قبلها ← معلّقة، ثم المحاسب «لا يحتاج مخالصة» ← تُرسل الشهادة
+  const id2 = env.api('submitRequest', { token: t, data: form({ courseIds: ['qasp-s'] }) }).data.id;
+  assert.strictEqual(env.api('adminGet', { token: ta, id: id2 }).data.clearance, 'بانتظار المالية');
+  const num = env.api('adminReserveNumber', { token: ta, id: id2 }).data;
+  env.api('adminApprove', { token: ta, data: { id: id2, certNo: num.certNo, pdf: PDF, start: '2026-01-01', end: '2026-11-20' } });
+  assert.strictEqual(env.api('adminGet', { token: ta, id: id2 }).data.status, 'معتمدة بانتظار المخالصة');
+  env.mails.length = 0;
+  const nn = env.api('adminClearance', { token: ta, id: id2, data: { outcome: 'none' } });
+  assert.strictEqual(nn.ok, true, nn.error); assert.match(nn.data, /أُرسلت الشهادة/);
+  g = env.api('adminGet', { token: ta, id: id2 }).data;
+  assert.strictEqual(g.clearance, 'لا تحتاج مخالصة'); assert.strictEqual(g.status, 'صادرة');
+  assert.ok(env.mails.some(m => m.to === 'p@x.com' && /🎓/.test(m.subject)));
+  assert.strictEqual(env.api('verify', { certNo: num.certNo }).data.status, 'valid');
+  // «لا يحتاج» قبل الاعتماد ← الاعتماد يرسل مباشرة
+  const id3 = env.api('submitRequest', { token: login(env, 'q@x.com'), data: form({ courseIds: ['qasp-s'] }) }).data.id;
+  env.api('adminClearance', { token: ta, id: id3, data: { outcome: 'none' } });
+  const n3 = env.api('adminReserveNumber', { token: ta, id: id3 }).data;
+  env.mails.length = 0;
+  env.api('adminApprove', { token: ta, data: { id: id3, certNo: n3.certNo, pdf: PDF, start: '2026-01-01', end: '2026-11-20' } });
+  assert.strictEqual(env.api('adminGet', { token: ta, id: id3 }).data.status, 'صادرة');
+  assert.ok(env.mails.some(m => m.to === 'q@x.com' && /🎓/.test(m.subject)));
+});
+
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));

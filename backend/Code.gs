@@ -85,7 +85,7 @@ const TYPE_LABEL = { short: 'دورة قصيرة', long: 'برنامج طويل'
 
 const ST = { PENDING: 'بانتظار المراجعة', ISSUED: 'صادرة', REJECTED: 'مرفوضة', REVOKED: 'ملغاة', HELD: 'معتمدة بانتظار المخالصة' };
 // حالات المخالصة المالية (البرامج التي فيها clearance: true في courses.json)
-const CLR = { FINANCE: 'بانتظار المالية', DUE: 'بانتظار السداد', SIGN: 'بانتظار التوقيع', SIGNED: 'موقّعة' };
+const CLR = { FINANCE: 'بانتظار المالية', DUE: 'بانتظار السداد', SIGN: 'بانتظار التوقيع', SIGNED: 'موقّعة', NONE: 'لا تحتاج مخالصة' };
 
 /* ===================== الإعداد (مرة واحدة) ===================== */
 function setup() {
@@ -546,6 +546,8 @@ function reqView_(r) {
     templates: c ? c.templates : [{ dir: String(r['معرّف الدورة']), label: '' }], template: r['القالب'] || '',
     clearance: clrState_(r), clearanceData: jsonOr_(r['بيانات المخالصة'], null), clearanceSigned: r['تاريخ التوقيع'] || '',
     clearanceFile: !!r['ملف المخالصة'],
+    // يمكن تحويل طلب البرنامج الطويل للمخالصة يدوياً (مثل OBM-P: بعض المتدربين فقط)
+    canStartClr: (!clrState_(r) || clrState_(r) === CLR.NONE) && [ST.PENDING, ST.HELD].indexOf(r['الحالة']) >= 0,
   };
 }
 function adminList(token) {
@@ -613,7 +615,7 @@ function adminApprove(token, d) {
 
   const file = DriveApp.getFolderById(prop_('CERTS_FOLDER')).createFile(blob);
   if (r['ملف الشهادة']) { try { DriveApp.getFileById(r['ملف الشهادة']).setTrashed(true); } catch (e) { } }
-  const hold = !!clrState_(r) && clrState_(r) !== CLR.SIGNED;
+  const hold = clrHolds_(r);
   if (hold) {
     setCells_(TABS.REQ, r._row, {
       'الحالة': ST.HELD, 'تاريخ البدء': d.start, 'تاريخ الإتمام': d.end,
@@ -788,6 +790,27 @@ function clrState_(r) {
   const c = courseById_(r['معرّف الدورة']);
   return c && c.clearance && [ST.PENDING, ST.HELD].indexOf(r['الحالة']) >= 0 ? CLR.FINANCE : '';
 }
+/** المخالصة تمنع إرسال الشهادة ما لم تكن موقّعة أو «لا تحتاج مخالصة» */
+function clrHolds_(r) { const s = clrState_(r); return !!s && s !== CLR.SIGNED && s !== CLR.NONE; }
+/** إرسال شهادة معتمدة كانت محفوظة بانتظار المخالصة */
+function releaseHeld_(r) {
+  if (r['الحالة'] !== ST.HELD || !r['ملف الشهادة']) return false;
+  const f = DriveApp.getFileById(r['ملف الشهادة']);
+  setCells_(TABS.REQ, r._row, { 'الحالة': ST.ISSUED, 'تاريخ الإصدار': now_() });
+  sendCertEmail_(cleanEmail_(r['البريد']), Object.assign({}, r), r['رقم الشهادة'], f.getBlob().setName(f.getName()), false);
+  return true;
+}
+/** تحويل طلب للمخالصة يدوياً (برامج تحتاجها لبعض المتدربين فقط، مثل OBM-P) */
+function adminClearanceStart(token, id) {
+  admin_(token);
+  const r = findReq_(id);
+  if ([ST.PENDING, ST.HELD].indexOf(r['الحالة']) < 0) throw new Error('لا يمكن تحويل طلب حالته «' + r['الحالة'] + '» للمخالصة.');
+  const s = clrState_(r);
+  if (s && s !== CLR.NONE) throw new Error('الطلب في مسار المخالصة مسبقاً (' + s + ').');
+  setCells_(TABS.REQ, r._row, { 'المخالصة': CLR.FINANCE });
+  notifyFinance_(r['رقم الطلب'], r['الاسم بالعربي'] || r['الاسم بالإنجليزي'], r['البريد'], r['اسم الدورة']);
+  return 'حُوّل الطلب للمخالصة المالية، وأُبلغ المحاسب. لن تُرسل الشهادة للمتدرب إلا بعد توقيعه المخالصة (أو اختيار «لا يحتاج مخالصة»).';
+}
 function notifyFinance_(id, nameAr, email, course) {
   try {
     sendMail_({
@@ -815,7 +838,14 @@ function adminClearance(token, id, d) {
   const r = findReq_(id);
   if (!clrState_(r)) throw new Error('هذا الطلب لا يحتاج مخالصة مالية.');
   if (clrState_(r) === CLR.SIGNED) throw new Error('المخالصة موقّعة مسبقاً.');
+  if (clrState_(r) === CLR.NONE) throw new Error('سُجّل أن هذا الطلب لا يحتاج مخالصة.');
   if ([ST.REJECTED, ST.REVOKED].indexOf(r['الحالة']) >= 0) throw new Error('الطلب ' + r['الحالة'] + '.');
+  if (d.outcome === 'none') { // مثل متدرب دفع المبلغ كاملاً من البداية
+    const old0 = jsonOr_(r['بيانات المخالصة'], {});
+    setCells_(TABS.REQ, r._row, { 'المخالصة': CLR.NONE, 'بيانات المخالصة': JSON.stringify(Object.assign(old0, { outcome: 'none', by: by, at: now_() })) });
+    if (releaseHeld_(r)) return 'سُجّل «لا يحتاج مخالصة»، وأُرسلت الشهادة المعتمدة للمتدرب.';
+    return 'سُجّل «لا يحتاج مخالصة». تُرسل الشهادة مباشرة عند اعتمادها.';
+  }
   const old = jsonOr_(r['بيانات المخالصة'], {});
   const data = Object.assign(old, {
     program: safe_(clean_(d.program) || old.program || r['اسم الدورة'], 120), hours: safe_(clean_(d.hours), 40),
@@ -904,12 +934,7 @@ function clearanceSign(token, id, d) {
         htmlBody: shell_('تم توقيع مخالصة', '<p><b>' + esc_(data.name) + '</b> (<span dir="ltr">' + esc_(email) + '</span>) وقّع مخالصة برنامج <b>' + esc_(data.program) +
           '</b> بتاريخ ' + signedAt + '.</p><p>رقم المستند: <span dir="ltr">' + data.docId + '</span></p>') });
     } catch (e) { console.error('clearance mail: ' + e); }
-    // إطلاق الشهادة المعلّقة
-    if (r['الحالة'] === ST.HELD && r['ملف الشهادة']) {
-      const f = DriveApp.getFileById(r['ملف الشهادة']);
-      setCells_(TABS.REQ, r._row, { 'الحالة': ST.ISSUED, 'تاريخ الإصدار': now_() });
-      sendCertEmail_(cleanEmail_(r['البريد']), Object.assign({}, r), r['رقم الشهادة'], f.getBlob().setName(f.getName()), false);
-    }
+    releaseHeld_(r); // إطلاق الشهادة المعلّقة
     return { ok: true, requests: getMyData(token).requests };
   } finally { lock.releaseLock(); }
 }
@@ -1100,6 +1125,7 @@ const ACTIONS = {
   adminImportPreview: b => adminImportPreview(b.token, b.url, b.from),
   adminClearance: b => adminClearance(b.token, b.id, b.data),
   adminClearanceResend: b => adminClearanceResend(b.token, b.id),
+  adminClearanceStart: b => adminClearanceStart(b.token, b.id),
   adminDownloadClearance: b => adminDownloadClearance(b.token, b.id),
   clearanceView: b => clearanceView(b.token, b.id),
   clearanceSign: b => clearanceSign(b.token, b.id, b.data),

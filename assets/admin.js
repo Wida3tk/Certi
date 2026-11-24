@@ -64,11 +64,26 @@ function renderList() {
 $('bCloseD').onclick = () => { $('aDetail').classList.add('hide'); $('aListCard').classList.remove('hide'); $('aTabs').classList.remove('hide'); loadAdmin(); };
 
 /* ---------- المخالصة المالية (للمحاسب والفريق) ---------- */
-const needsClr = r => r.clearance && r.clearance !== CLR.SIGNED && [ST.REJECTED, ST.REVOKED].indexOf(r.status) < 0;
+const needsClr = r => r.clearance && r.clearance !== CLR.SIGNED && r.clearance !== CLR.NONE && [ST.REJECTED, ST.REVOKED].indexOf(r.status) < 0;
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
 function renderClr(r) {
   const box = $('dClr');
-  if (!r.clearance) { box.classList.add('hide'); box.innerHTML = ''; return; }
+  const startBtn = '<button class="ghost" id="bClrStart">تحويل للمخالصة المالية</button>';
+  const bindStart = () => { const b = $('bClrStart'); if (!b) return; b.onclick = async () => {
+    if (!confirm('سيُحوَّل الطلب للمخالصة ويُبلَّغ المحاسب، ولن تُرسل الشهادة إلا بعد توقيع المتدرب المخالصة. متابعة؟')) return;
+    busy(b, true);
+    try { const m = await api('adminClearanceStart', { token: SESSION.token, id: r.id }); await refreshAndOpen(r.id); msg($('dMsg'), m, 'ok'); }
+    catch (e) { msg($('dMsg'), e.message, 'err'); }
+    busy(b, false); }; };
+  if (!r.clearance) {
+    // برنامج طويل بلا مخالصة تلقائية (مثل OBM-P): التحويل اختياري لكل طلب
+    if (r.canStartClr && r.type === 'برنامج طويل') {
+      box.classList.remove('hide');
+      box.innerHTML = '<b>المخالصة المالية</b><p class="hint" style="margin:6px 0">هذا البرنامج لا يحتاج مخالصة لكل المتدربين. إن كان هذا المتدرب يحتاجها حوّليه للمحاسب.</p>' + startBtn;
+      bindStart();
+    } else { box.classList.add('hide'); box.innerHTML = ''; }
+    return;
+  }
   box.classList.remove('hide');
   const c = r.clearanceData || {};
   const head = '<b>المخالصة المالية</b> ' + pill(r.clearance) + (c.docId ? ' <span class="hint" dir="ltr">' + esc(c.docId) + '</span>' : '');
@@ -76,6 +91,11 @@ function renderClr(r) {
     box.innerHTML = head + '<p class="hint" style="margin:6px 0">وقّعها المتدرب في ' + esc(r.clearanceSigned) + '.</p><button class="ghost" id="bClrDl">تحميل المخالصة الموقّعة</button>';
     $('bClrDl').onclick = async () => { const b = $('bClrDl'); busy(b, true);
       try { const f = await api('adminDownloadClearance', { token: SESSION.token, id: r.id }); downloadB64(f.name, f.data); } catch (e) { msg($('dMsg'), e.message, 'err'); } busy(b, false); };
+    return;
+  }
+  if (r.clearance === CLR.NONE) {
+    box.innerHTML = head + '<p class="hint" style="margin:6px 0">سُجّل أن هذا المتدرب لا يحتاج مخالصة، فتُرسل شهادته مباشرة عند اعتمادها.</p>' + (r.canStartClr ? startBtn : '');
+    bindStart();
     return;
   }
   if (r.clearance === CLR.SIGN) {
@@ -96,10 +116,11 @@ function renderClr(r) {
     '<div class="actions">' +
       (r.clearance === CLR.DUE ? '<button class="ok" data-o="paid">تم السداد — إصدار المخالصة للتوقيع</button>'
         : '<button class="ok" data-o="nodue">لا يوجد مبلغ مستحق — إصدار المخالصة للتوقيع</button><button class="ghost" data-o="due">يوجد مبلغ مستحق — بانتظار السداد</button>') +
-    '</div>';
+    '</div><div class="actions" style="margin-top:6px"><button class="ghost" data-o="none" title="مثلاً: متدرب دفع المبلغ كاملاً من البداية">لا يحتاج مخالصة (مدفوع بالكامل مسبقاً)</button></div>';
   box.querySelectorAll('[data-o]').forEach(b => b.onclick = async () => {
     const o = b.dataset.o;
-    if (o !== 'due' && !confirm('ستُرسل المخالصة إلى ' + r.email + ' ليوقّعها. متابعة؟')) return;
+    if (o === 'none' && !confirm('سيُسجَّل أن المتدرب لا يحتاج مخالصة' + (r.status === ST.HELD ? '، وتُرسل شهادته المعتمدة إليه الآن' : '') + '. متابعة؟')) return;
+    if ((o === 'nodue' || o === 'paid') && !confirm('ستُرسل المخالصة إلى ' + r.email + ' ليوقّعها. متابعة؟')) return;
     busy(b, true);
     try {
       const m = await api('adminClearance', { token: SESSION.token, id: r.id, data: { outcome: o, program: $('cProg').value, hours: $('cHours').value,
@@ -238,7 +259,7 @@ $('bGen').onclick = async () => {
 
 async function approve(test) {
   if (!GEN) return;
-  const held = CUR.clearance && CUR.clearance !== CLR.SIGNED;
+  const held = CUR.clearance && CUR.clearance !== CLR.SIGNED && CUR.clearance !== CLR.NONE;
   if (!test && !confirm(held ? 'ستُعتمد الشهادة ' + GEN.certNo + ' وتُحفظ، وتُرسل إلى ' + CUR.email + ' تلقائياً بعد توقيعه المخالصة المالية. متابعة؟'
     : 'سيتم إصدار الشهادة ' + GEN.certNo + ' وإرسالها إلى ' + CUR.email + '. متابعة؟')) return;
   document.querySelectorAll('#dActs button').forEach(x => x.disabled = true);
