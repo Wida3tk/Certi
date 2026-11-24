@@ -69,6 +69,30 @@
   تأكيد مصدر نظام العمليات؛ ملفات PSD للدورات الباقية.
 - الإعدادات القابلة للتغيير (المشرفون، رابط الموقع، نظام العمليات) في `DEFAULTS` أعلى `backend/Code.gs` ويمكن تجاوزها من Script Properties.
 
+## ⏯ أين توقفنا (آخر تحديث 2026-11-24 — ابدأ من هنا)
+**منجز ومرفوع على `main` وعلى الفرع `claude/tender-lovelace-vmi1w2`:** الموقع كامل بالتصميم الجديد، الخلفية منشورة، 43 قالباً محوّلة في `templates/_staging/`.
+
+**ينتظر مريم (بالترتيب):**
+1. **تفعيل GitHub Pages:** https://github.com/Wida3tk/Certi/settings/pages ← Deploy from a branch ← `main` و`/ (root)` ← Save.
+   (تفعيلها من الجلسة السحابية ممنوع عبر الـ proxy.) الموقع بعدها: https://wida3tk.github.io/Certi/
+2. **تفويض الخلفية:** فتح رابط الـ exec (في `assets/config.js`) بحساب maryam ← Review permissions ← Allow.
+   آخر اختبار أعطى «Access Denied – You need access» للزائر المجهول رغم أن النشر `ANYONE_ANONYMOUS` (تحققنا عبر Apps Script API).
+   إما أن التفويض لم يكتمل، أو سياسة Workspace تمنع المشاركة خارج sulukera.com
+   (الحل: admin.google.com ← Apps ← Google Workspace ← Drive and Docs ← Sharing settings ← Sharing outside of sulukera.com: ON).
+   اختبر بـ `curl -sL <exec>` — المتوقع `{"ok":true,...,"ready":true}`.
+3. **مراجعة القوالب** في صفحة المراجعة (الرابط في `templates/_staging/README.md`) ← ثم تفعيل المعتمد.
+4. **GoDaddy:** بعد عمل الموقع على github.io: أعد `docs/CNAME.pending` إلى `CNAME` في الجذر، وسجل CNAME `certificates` ← `wida3tk.github.io`،
+   ثم Custom domain + Enforce HTTPS في إعدادات Pages.
+
+**الخطوات البرمجية التالية بعد ذلك:** اختيار نسخة القالب (المدرب) في لوحة المراجعة ← البرامج الطويلة + صفحة المحاسب + المخالصة والتوقيع الإلكتروني
+(نموذج المخالصة في Drive مجلد الشهادات: «مخالصة مالية _ نزهه صعفق العنزي.pdf») ← تعديل الاسم برسوم ← إصدار شهادات الإشراف.
+
+**ملاحظات تقنية للجلسة القادمة:**
+- `clasp` يحتاج تسجيل دخول جديد في كل جلسة سحابية (لا تُحفظ بيانات الدخول في المستودع): `npx @google/clasp@3.1.0 login --no-localhost`،
+  شغّله في الخلفية مع FIFO لإدخال عنوان localhost الذي ترسله مريم، ثم `npm run clasp:push` و`npm run clasp:deploy`.
+- بيئة الجلسة السحابية `certi` تسمح بـ: drive.usercontent.google.com, drive.google.com, sulukera.com, script.google.com, script.googleusercontent.com.
+- ملفات PSD الأصلية ليست في المستودع (كبيرة)؛ قائمة معرّفاتها في `tools/review/drive-files.tsv` وتُنزّل عبر drive.usercontent.google.com (مشاركة بالرابط).
+
 ## خطوات التنفيذ (بالترتيب)
 1. **الهيكل:** `index.html`، `admin.html`، `assets/` (CSS + JS مشترك + `render.js`)، `templates/`، `backend/`، `tools/`، `CNAME`.
 2. **الخلفية:** انقل `reference/Code.gs` إلى `backend/Code.gs` كـ API (`doPost` يوجّه حسب `action`، و`doGet` يرجع حالة فقط).

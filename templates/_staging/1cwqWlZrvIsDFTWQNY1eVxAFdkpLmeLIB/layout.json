@@ -1,0 +1,60 @@
+{
+ "fields": [
+  {
+   "key": "nameEn",
+   "baseline": "alphabetic",
+   "font": "Tangerine",
+   "weight": "700",
+   "size": 220.8,
+   "color": "#0C40FB",
+   "align": "center",
+   "x": 1721.5,
+   "y": 1053.8,
+   "maxWidth": 2300
+  },
+  {
+   "key": "start",
+   "baseline": "alphabetic",
+   "font": "Cardo",
+   "weight": "700",
+   "size": 75,
+   "color": "#0C40FB",
+   "align": "left",
+   "x": 394.3,
+   "y": 1732.2,
+   "prefix": "Start date: ",
+   "format": "MM/dd/yyyy"
+  },
+  {
+   "key": "end",
+   "baseline": "alphabetic",
+   "font": "Cardo",
+   "weight": "700",
+   "size": 75,
+   "color": "#0C40FB",
+   "align": "left",
+   "x": 2396.1,
+   "y": 1733.3,
+   "prefix": "End date: ",
+   "format": "MM/dd/yyyy"
+  },
+  {
+   "key": "qr",
+   "x": 2210,
+   "y": 1930,
+   "size": 250,
+   "color": "#1F2440",
+   "bg": "#FFFFFF"
+  },
+  {
+   "key": "certNo",
+   "x": 2335,
+   "y": 2235,
+   "size": 34,
+   "font": "Cardo",
+   "weight": "700",
+   "color": "#1F2440",
+   "align": "center"
+  }
+ ]
+}
