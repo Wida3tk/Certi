@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>سلوكيرا | مراجعة الشهادات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/vendor/jspdf.umd.min.js"></script>
+<script src="assets/vendor/qrcode.js"></script>
+</head>
+<body>
+<header>
+  <a class="brand" href="admin.html">سلوكيرا | مراجعة الشهادات</a>
+  <span class="who hide" id="who"><span id="whoEmail" dir="ltr"></span><a id="logout">تسجيل الخروج</a></span>
+</header>
+<main>
+
+<section id="vLogin" class="card narrow hide">
+  <h1>دخول لوحة المراجعة</h1>
+  <p class="hint">للمشرفين فقط. أدخلي بريدك وسيصلك رمز دخول.</p>
+  <div id="step1">
+    <label for="lEmail">البريد الإلكتروني</label>
+    <input id="lEmail" type="email" dir="ltr" autocomplete="email" placeholder="name@sulukera.com">
+    <div class="actions"><button id="bSend">إرسال الرمز</button></div>
+  </div>
+  <div id="step2" class="hide">
+    <label for="lCode">رمز الدخول <span class="hint">(أُرسل إلى <span id="sentTo" dir="ltr"></span>)</span></label>
+    <input id="lCode" inputmode="numeric" autocomplete="one-time-code" dir="ltr" maxlength="6" placeholder="••••••">
+    <div class="actions"><button id="bVerify">دخول</button><button class="ghost" id="bBack">تغيير البريد</button></div>
+  </div>
+  <div id="lMsg" class="msg" role="alert"></div>
+</section>
+
+<section id="vAdmin" class="hide">
+  <div class="tabs" id="aTabs">
+    <button data-f="بانتظار المراجعة" class="on">بانتظار المراجعة<span class="count" id="cPending"></span></button>
+    <button data-f="صادرة">صادرة</button><button data-f="مرفوضة">مرفوضة</button><button data-f="ملغاة">ملغاة</button><button data-f="">الكل</button>
+  </div>
+  <div class="card" id="aListCard">
+    <div class="row" style="margin-bottom:8px"><input id="aSearch" placeholder="بحث بالاسم أو البريد أو رقم الشهادة"><div style="flex:0;min-width:auto"><button class="ghost" id="bRefresh">تحديث</button></div></div>
+    <div id="aList" class="tablewrap"><p class="hint">جارٍ التحميل...</p></div>
+  </div>
+
+  <div class="card hide" id="aDetail">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <h2 id="dTitle" style="margin:0"></h2><button class="ghost" id="bCloseD">رجوع للقائمة</button>
+    </div>
+    <div class="grid2" style="margin-top:16px">
+      <div>
+        <h3>صورة الإتمام <span class="hint">(رفعها المتدرب — اضغطي للتكبير)</span></h3>
+        <div class="proof" id="dProof"></div>
+        <h3>نظام العمليات</h3>
+        <div id="dOps"></div>
+      </div>
+      <div>
+        <h3>بيانات الشهادة</h3>
+        <label for="dNameEn">الاسم بالإنجليزية</label><input id="dNameEn" dir="ltr" maxlength="80">
+        <label for="dStart">تاريخ البدء</label><input id="dStart" type="date"><div class="tag" id="dStartSrc"></div>
+        <label for="dEnd">تاريخ الانتهاء</label><input id="dEnd" type="date"><div class="tag" id="dEndSrc"></div>
+        <div class="src" id="dMeta"></div>
+        <div class="actions"><button id="bGen">توليد ومعاينة</button></div>
+      </div>
+    </div>
+    <div id="prev" style="margin-top:16px"></div>
+    <div class="actions" id="dActs"></div>
+    <div id="dRej" class="hide">
+      <label for="dReason">سبب الرفض <span class="hint">(يصل للمتدرب بالإيميل ويظهر له في «شهاداتي»)</span></label><textarea id="dReason"></textarea>
+      <div class="actions"><button class="danger" id="bRejGo">تأكيد الرفض</button></div>
+    </div>
+    <div id="dMsg" class="msg" role="alert"></div>
+  </div>
+</section>
+</main>
+
+<script src="assets/config.js"></script>
+<script src="assets/common.js"></script>
+<script src="assets/render.js"></script>
+<script src="assets/generate.js"></script>
+<script src="assets/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,558 @@
+/**
+ * سلوكيرا — نظام الشهادات: الخلفية (API بصيغة JSON)
+ * ------------------------------------------------------------------
+ * الواجهة على GitHub Pages (certificates.sulukera.com) ترسل:
+ *   fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain'},
+ *                    body: JSON.stringify({ action, token, ...args }) })
+ * والرد دائماً: { ok:true, data } أو { ok:false, error:'رسالة بالعربية' }
+ *
+ * النشر: من المستودع بـ  clasp push  ثم  clasp deploy  (Execute as: Me — Access: Anyone)
+ * أول مرة فقط: شغّلي setup() ← تنشئ الشيت (الطلبات + الرضا) والمجلدات في Drive.
+ *
+ * كل إعداد قابل للتغيير موجود في DEFAULTS أدناه، ويمكن تجاوزه دون تعديل الكود
+ * من: Project Settings ← Script Properties (نفس اسم المفتاح).
+ */
+
+/* ===================== الإعدادات ===================== */
+const DEFAULTS = {
+  // من يحق له فتح لوحة المراجعة (مفصولة بفواصل في Script Properties)
+  ADMINS: 'maryam@sulukera.com,care@sulukera.com',
+  // رابط الموقع (ينتهي بـ /) — منه تُقرأ قائمة الدورات ويُبنى رابط التحقق في QR
+  SITE_URL: 'https://certificates.sulukera.com/',
+  // نظام العمليات (قراءة فقط) — المرحلة الثانية: يتغير المصدر هنا فقط
+  OPS_SHEET_ID: '1KdEwKu-Y5L1wII9qGU_pgMmCmAMVcCZiBlC26xR29bU',
+  OPS_TAB: 'العملاء',
+  OPS_COL_EMAIL: 'البريد الإلكتروني',
+  OPS_COL_PROGRAM: 'البرنامج',
+  OPS_COL_REGISTERED: 'تاريخ التسجيل',
+  OPS_COL_ACTIVATED: 'تاريخ التفعيل',
+};
+
+const CONFIG = {
+  SENDER_NAME: 'سلوكيرا | Sulukera',
+  REPLY_TO: 'care@sulukera.com',
+  SUBJECT: 'شهادتك من سلوكيرا 🎓 | {{course}}',
+  COLOR_PRIMARY: '#2E6DB4',
+  COLOR_DARK: '#1F3A5F',
+  LOGO_URL: '',                 // اختياري: رابط عام لشعار سلوكيرا (PNG)
+  CERT_PREFIX: 'SLK',           // رقم الشهادة: SLK-2026-000001
+  // استبيان الرضا الإلزامي قبل الطلب (تقييم 1–5 لكل سؤال + تعليق)
+  SURVEY: [
+    'مدى رضاك العام عن الدورة',
+    'وضوح المحتوى العلمي',
+    'أداء المحاضر',
+    'سهولة استخدام المنصة',
+    'احتمال أن توصي بسلوكيرا لغيرك',
+  ],
+  MAX_UPLOAD_MB: 5,
+  SESSION_HOURS: 6,
+};
+
+function setting_(k) {
+  const v = PropertiesService.getScriptProperties().getProperty(k);
+  return v != null && v !== '' ? v : DEFAULTS[k];
+}
+function siteUrl_() { return String(setting_('SITE_URL')).replace(/\/?$/, '/'); }
+function verifyUrl_(certNo) { return siteUrl_() + '?v=' + encodeURIComponent(certNo); }
+
+/* ===================== الأوراق ===================== */
+const TABS = { REQ: 'الطلبات', SURVEY: 'الرضا' };
+const REQ_HEADERS = [
+  'رقم الطلب', 'تاريخ الطلب', 'الاسم بالإنجليزي', 'البريد', 'الجوال',
+  'معرّف الدورة', 'اسم الدورة', 'صورة الإتمام', 'موجود في العمليات', 'بيانات العمليات',
+  'الحالة', 'تاريخ البدء', 'تاريخ الإتمام', 'رقم الشهادة', 'ملف الشهادة', 'تاريخ الإصدار',
+  'اعتمدها', 'ملاحظات',
+];
+// أعمدة تُحفظ نصاً كما هي (حتى لا يحوّل الشيت الجوال لرقم أو التاريخ لكائن تاريخ)
+const TEXT_COLS = ['تاريخ الطلب', 'الجوال', 'تاريخ البدء', 'تاريخ الإتمام', 'رقم الشهادة', 'تاريخ الإصدار'];
+const SURVEY_HEADERS = ['رقم الطلب', 'التاريخ', 'البريد', 'الدورة']
+  .concat(CONFIG.SURVEY).concat(['تعليق']);
+
+const ST = { PENDING: 'بانتظار المراجعة', ISSUED: 'صادرة', REJECTED: 'مرفوضة', REVOKED: 'ملغاة' };
+
+/* ===================== الإعداد (مرة واحدة) ===================== */
+function setup() {
+  const props = PropertiesService.getScriptProperties();
+  let ss;
+  if (props.getProperty('SHEET_ID')) {
+    ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
+  } else {
+    ss = SpreadsheetApp.create('سلوكيرا — نظام الشهادات');
+    props.setProperty('SHEET_ID', ss.getId());
+  }
+  ensureTab_(ss, TABS.REQ, REQ_HEADERS, TEXT_COLS);
+  ensureTab_(ss, TABS.SURVEY, SURVEY_HEADERS, ['التاريخ']);
+  const first = ss.getSheets()[0];
+  if (ss.getSheets().length > 2 && (first.getName() === 'Sheet1' || first.getName() === 'الورقة1')) ss.deleteSheet(first);
+
+  if (!props.getProperty('ROOT_FOLDER')) {
+    const root = DriveApp.createFolder('سلوكيرا — نظام الشهادات');
+    props.setProperty('ROOT_FOLDER', root.getId());
+    props.setProperty('CERTS_FOLDER', root.createFolder('الشهادات الصادرة').getId());
+    props.setProperty('PROOFS_FOLDER', root.createFolder('إثباتات الإتمام').getId());
+    DriveApp.getFileById(ss.getId()).moveTo(root);
+  }
+  Logger.log('الشيت: ' + ss.getUrl());
+  Logger.log('المجلد: ' + DriveApp.getFolderById(props.getProperty('ROOT_FOLDER')).getUrl());
+  return ss.getUrl();
+}
+
+function ensureTab_(ss, name, headers, textCols) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers])
+      .setFontWeight('bold').setBackground('#1F3A5F').setFontColor('#ffffff');
+    sh.setFrozenRows(1);
+    sh.setRightToLeft(true);
+  }
+  (textCols || []).forEach(h => {
+    const c = headers.indexOf(h);
+    if (c >= 0) sh.getRange(2, c + 1, sh.getMaxRows() - 1, 1).setNumberFormat('@');
+  });
+  return sh;
+}
+
+/* ===================== أدوات عامة ===================== */
+function prop_(k) {
+  const v = PropertiesService.getScriptProperties().getProperty(k);
+  if (!v) throw new Error('النظام غير مُعدّ بعد. شغّلي setup() من المحرر.');
+  return v;
+}
+function ss_() { return SpreadsheetApp.openById(prop_('SHEET_ID')); }
+function sheet_(name) { return ss_().getSheetByName(name); }
+function tz_() { return Session.getScriptTimeZone(); }
+function now_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'); }
+function cleanEmail_(e) { return String(e || '').trim().toLowerCase(); }
+function isEmail_(e) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) && e.length <= 200; }
+function isIsoDate_(d) { return /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')); }
+function esc_(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+/** نص من المستخدم: يُقصّ ويُمنع أن يُفسَّر كمعادلة في الشيت */
+function safe_(s, max) {
+  s = String(s == null ? '' : s).replace(/[\u0000-\u001F]/g, ' ').trim().slice(0, max || 500);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
+}
+
+function rows_(name) {
+  const sh = sheet_(name);
+  const values = sh.getDataRange().getValues();
+  const head = values.shift();
+  return values.map((r, i) => {
+    const o = { _row: i + 2 };
+    head.forEach((h, j) => o[h] = r[j] instanceof Date
+      ? Utilities.formatDate(r[j], tz_(), 'yyyy-MM-dd') : r[j]);
+    return o;
+  });
+}
+function setCells_(name, row, obj) {
+  const sh = sheet_(name);
+  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  Object.keys(obj).forEach(k => {
+    const c = head.indexOf(k);
+    if (c >= 0) sh.getRange(row, c + 1).setValue(obj[k]);
+  });
+}
+function appendObj_(name, headers, obj) {
+  sheet_(name).appendRow(headers.map(h => obj[h] == null ? '' : obj[h]));
+}
+function findReq_(id) {
+  const r = rows_(TABS.REQ).filter(x => String(x['رقم الطلب']) === String(id))[0];
+  if (!r) throw new Error('الطلب غير موجود.');
+  return r;
+}
+
+/* ===================== الدورات (من الموقع) ===================== */
+/** templates/courses.json على الموقع هو المصدر الوحيد لقائمة الدورات */
+function courses_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('courses');
+  if (hit) return JSON.parse(hit);
+  const res = UrlFetchApp.fetch(siteUrl_() + 'templates/courses.json?t=' + Date.now(), { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('تعذّرت قراءة قائمة الدورات من الموقع.');
+  const list = JSON.parse(res.getContentText())
+    .filter(c => c && c.id && c.name)
+    .map(c => ({ id: String(c.id), name: String(c.name), active: c.active !== false }));
+  cache.put('courses', JSON.stringify(list), 600);
+  return list;
+}
+function activeCourses_() { return courses_().filter(c => c.active).map(c => ({ id: c.id, name: c.name })); }
+
+/* ===================== الدخول برمز ===================== */
+function otp_() {
+  // 6 أرقام من UUID عشوائي (أقوى من Math.random)
+  const hex = Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+  return String(100000 + (parseInt(hex, 16) % 900000));
+}
+
+function requestCode(email) {
+  email = cleanEmail_(email);
+  if (!isEmail_(email)) throw new Error('البريد الإلكتروني غير صحيح.');
+  const cache = CacheService.getScriptCache();
+  if (cache.get('lock:' + email)) throw new Error('محاولات خاطئة كثيرة. حاول بعد 15 دقيقة.');
+  const n = Number(cache.get('cnt:' + email) || 0);
+  if (n >= 5) throw new Error('طلبت رموزاً كثيرة. حاول بعد نصف ساعة.');
+  cache.put('cnt:' + email, String(n + 1), 1800);
+
+  const code = otp_();
+  cache.put('otp:' + email, code, 600);
+  cache.remove('try:' + email);
+  MailApp.sendEmail({
+    to: email,
+    name: CONFIG.SENDER_NAME,
+    replyTo: CONFIG.REPLY_TO,
+    subject: 'رمز الدخول إلى شهادات سلوكيرا: ' + code,
+    htmlBody: shell_('رمز الدخول',
+      '<p>رمز الدخول الخاص بك:</p>' +
+      '<p style="font-size:32px;font-weight:bold;letter-spacing:6px;color:' + CONFIG.COLOR_DARK + '">' + code + '</p>' +
+      '<p style="color:#666">صالح لمدة 10 دقائق. إذا لم تطلب هذا الرمز تجاهل الرسالة.</p>'),
+  });
+  return true;
+}
+
+function verifyCode(email, code) {
+  email = cleanEmail_(email);
+  const cache = CacheService.getScriptCache();
+  if (cache.get('lock:' + email)) throw new Error('محاولات خاطئة كثيرة. حاول بعد 15 دقيقة.');
+  const k = 'otp:' + email;
+  const expected = cache.get(k);
+  if (!expected || String(code || '').trim() !== expected) {
+    const tries = Number(cache.get('try:' + email) || 0) + 1;
+    if (tries >= 5) {
+      // القفل: الرمز الحالي يُلغى ولا يُقبل أي رمز لمدة 15 دقيقة
+      cache.remove(k); cache.remove('try:' + email);
+      cache.put('lock:' + email, '1', 900);
+      throw new Error('محاولات خاطئة كثيرة. أُقفل الدخول 15 دقيقة.');
+    }
+    cache.put('try:' + email, String(tries), 600);
+    throw new Error('الرمز غير صحيح أو انتهت صلاحيته.');
+  }
+  cache.remove(k); cache.remove('try:' + email); cache.remove('cnt:' + email);
+  const token = Utilities.getUuid() + Utilities.getUuid();
+  cache.put('tok:' + token, email, CONFIG.SESSION_HOURS * 3600);
+  return { token: token, email: email, isAdmin: isAdmin_(email) };
+}
+
+function who_(token) {
+  const email = token && typeof token === 'string' && CacheService.getScriptCache().get('tok:' + token);
+  if (!email) throw new Error('انتهت الجلسة. سجّل الدخول من جديد.');
+  return email;
+}
+function admins_() { return String(setting_('ADMINS')).split(/[,\s]+/).map(cleanEmail_).filter(String); }
+function isAdmin_(email) { return admins_().indexOf(cleanEmail_(email)) >= 0; }
+function admin_(token) {
+  const email = who_(token);
+  if (!isAdmin_(email)) throw new Error('غير مصرّح.');
+  return email;
+}
+function logout(token) {
+  if (token) CacheService.getScriptCache().remove('tok:' + token);
+  return true;
+}
+
+/* ===================== المتدرب ===================== */
+function getMyData(token) {
+  const email = who_(token);
+  const mine = rows_(TABS.REQ).filter(r => cleanEmail_(r['البريد']) === email);
+  return {
+    email: email,
+    isAdmin: isAdmin_(email),
+    courses: activeCourses_(),
+    survey: CONFIG.SURVEY,
+    maxMb: CONFIG.MAX_UPLOAD_MB,
+    requests: mine.map(r => ({
+      id: r['رقم الطلب'], course: r['اسم الدورة'], date: String(r['تاريخ الطلب']).slice(0, 10),
+      status: r['الحالة'], certNo: r['الحالة'] === ST.ISSUED ? r['رقم الشهادة'] : '',
+      issued: r['تاريخ الإصدار'],
+      note: r['الحالة'] === ST.REJECTED ? r['ملاحظات'] : '',
+    })).reverse(),
+  };
+}
+
+const NAME_EN_RE = /^[A-Za-zÀ-ɏ][A-Za-zÀ-ɏ .'\-]{1,79}$/;
+
+function submitRequest(token, d) {
+  const email = who_(token);
+  d = d || {};
+  const nameEn = String(d.nameEn || '').replace(/\s+/g, ' ').trim();
+  if (!nameEn) throw new Error('اكتب اسمك بالإنجليزية كما تريده على الشهادة.');
+  if (!NAME_EN_RE.test(nameEn)) throw new Error('الاسم يُكتب بالحروف الإنجليزية فقط (مثال: Sara Ahmed Al-Harbi).');
+  const course = activeCourses_().filter(c => c.id === String(d.courseId))[0];
+  if (!course) throw new Error('اختر الدورة.');
+  if (!d.proof || !d.proof.data) throw new Error('ارفع صورة نسبة الإتمام من حسابك.');
+  if (!/^image\/(png|jpe?g|webp)$/.test(String(d.proof.type))) throw new Error('الصورة يجب أن تكون PNG أو JPG.');
+  if (!Array.isArray(d.survey) || d.survey.length !== CONFIG.SURVEY.length ||
+    d.survey.some(v => !(Number(v) >= 1 && Number(v) <= 5 && Number(v) % 1 === 0)))
+    throw new Error('أكمل استبيان الرضا.');
+  const bytes = Utilities.base64Decode(String(d.proof.data));
+  if (bytes.length > CONFIG.MAX_UPLOAD_MB * 1024 * 1024) throw new Error('حجم الصورة أكبر من المسموح.');
+
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const dup = rows_(TABS.REQ).filter(r => cleanEmail_(r['البريد']) === email &&
+      String(r['معرّف الدورة']) === course.id && [ST.PENDING, ST.ISSUED].indexOf(r['الحالة']) >= 0)[0];
+    if (dup) throw new Error(dup['الحالة'] === ST.ISSUED
+      ? 'شهادة هذه الدورة صادرة لك مسبقاً، تجدها في «شهاداتي».'
+      : 'لديك طلب لهذه الدورة قيد المراجعة، لا حاجة لتقديم طلب جديد.');
+
+    const id = 'REQ-' + Utilities.formatDate(new Date(), tz_(), 'yyMMdd') + '-' +
+      Utilities.getUuid().replace(/-/g, '').slice(0, 5).toUpperCase();
+    const file = DriveApp.getFolderById(prop_('PROOFS_FOLDER')).createFile(
+      Utilities.newBlob(bytes, d.proof.type, id + ' - ' + nameEn));
+
+    const ops = opsLookup_(email);
+    const okOps = ops.filter(o => !o.error);
+    appendObj_(TABS.REQ, REQ_HEADERS, {
+      'رقم الطلب': id, 'تاريخ الطلب': now_(), 'الاسم بالإنجليزي': safe_(nameEn, 80),
+      'البريد': email, 'الجوال': safe_(d.phone, 30),
+      'معرّف الدورة': course.id, 'اسم الدورة': course.name, 'صورة الإتمام': file.getId(),
+      'موجود في العمليات': ops.some(o => o.error) ? 'تعذّرت القراءة' : (okOps.length ? 'نعم' : 'لا'),
+      'بيانات العمليات': JSON.stringify(ops),
+      'الحالة': ST.PENDING,
+    });
+    const s = {}; s['رقم الطلب'] = id; s['التاريخ'] = now_(); s['البريد'] = email; s['الدورة'] = course.name;
+    CONFIG.SURVEY.forEach((q, i) => s[q] = Number(d.survey[i]));
+    s['تعليق'] = safe_(d.comment, 2000);
+    appendObj_(TABS.SURVEY, SURVEY_HEADERS, s);
+    return id;
+  } finally { lock.releaseLock(); }
+}
+
+function downloadMyCert(token, certNo) {
+  const email = who_(token);
+  const r = rows_(TABS.REQ).filter(x => x['رقم الشهادة'] && x['رقم الشهادة'] === String(certNo))[0];
+  if (!r || (cleanEmail_(r['البريد']) !== email && !isAdmin_(email))) throw new Error('الشهادة غير موجودة.');
+  if (r['الحالة'] !== ST.ISSUED) throw new Error('هذه الشهادة غير متاحة.');
+  const f = DriveApp.getFileById(r['ملف الشهادة']);
+  return { name: f.getName(), data: Utilities.base64Encode(f.getBlob().getBytes()) };
+}
+
+/* ===================== التحقق العام (رمز QR) ===================== */
+function verifyCert(certNo) {
+  certNo = String(certNo || '').trim().toUpperCase();
+  if (!/^[A-Z]{2,5}-\d{4}-\d{6}$/.test(certNo)) return { status: 'notfound', certNo: certNo };
+  const r = rows_(TABS.REQ).filter(x => x['رقم الشهادة'] === certNo)[0];
+  if (r && r['الحالة'] === ST.ISSUED) {
+    return { status: 'valid', certNo: certNo, name: r['الاسم بالإنجليزي'], course: r['اسم الدورة'],
+      start: r['تاريخ البدء'], end: r['تاريخ الإتمام'], issued: String(r['تاريخ الإصدار']).slice(0, 10) };
+  }
+  if (r && r['الحالة'] === ST.REVOKED) return { status: 'revoked', certNo: certNo };
+  return { status: 'notfound', certNo: certNo };
+}
+
+/* ===================== نظام العمليات ===================== */
+function opsLookup_(email) {
+  try {
+    const sh = SpreadsheetApp.openById(setting_('OPS_SHEET_ID')).getSheetByName(setting_('OPS_TAB'));
+    if (!sh) throw new Error('التبويب «' + setting_('OPS_TAB') + '» غير موجود');
+    const v = sh.getDataRange().getValues();
+    const head = v.shift().map(h => String(h).trim());
+    const ci = k => {
+      const i = head.indexOf(setting_(k));
+      if (i < 0) throw new Error('العمود «' + setting_(k) + '» غير موجود');
+      return i;
+    };
+    const iE = ci('OPS_COL_EMAIL'), iP = ci('OPS_COL_PROGRAM'), iR = ci('OPS_COL_REGISTERED'), iA = ci('OPS_COL_ACTIVATED');
+    const fmt = x => x instanceof Date ? Utilities.formatDate(x, tz_(), 'yyyy-MM-dd') : String(x || '');
+    return v.filter(r => cleanEmail_(r[iE]) === email).map(r => ({
+      program: fmt(r[iP]), registered: fmt(r[iR]), activated: fmt(r[iA]),
+    }));
+  } catch (e) {
+    return [{ error: 'تعذّرت القراءة من نظام العمليات: ' + e.message }];
+  }
+}
+
+/* ===================== لوحة المراجعة ===================== */
+function adminList(token) {
+  admin_(token);
+  return rows_(TABS.REQ).map(r => ({
+    id: r['رقم الطلب'], date: String(r['تاريخ الطلب']).slice(0, 10),
+    nameEn: r['الاسم بالإنجليزي'], email: r['البريد'], course: r['اسم الدورة'],
+    inOps: r['موجود في العمليات'], status: r['الحالة'], certNo: r['رقم الشهادة'],
+    issued: r['تاريخ الإصدار'],
+  })).reverse();
+}
+
+function adminGet(token, id) {
+  admin_(token);
+  const r = findReq_(id);
+  let proof = null;
+  try {
+    const f = DriveApp.getFileById(r['صورة الإتمام']);
+    proof = 'data:' + f.getMimeType() + ';base64,' + Utilities.base64Encode(f.getBlob().getBytes());
+  } catch (e) { }
+  let ops = [];
+  try { ops = JSON.parse(r['بيانات العمليات'] || '[]'); } catch (e) { }
+  return {
+    id: r['رقم الطلب'], nameEn: r['الاسم بالإنجليزي'], email: r['البريد'],
+    phone: r['الجوال'], courseId: String(r['معرّف الدورة']), course: r['اسم الدورة'],
+    date: String(r['تاريخ الطلب']).slice(0, 10), status: r['الحالة'], proof: proof,
+    ops: ops, opsNow: opsLookup_(cleanEmail_(r['البريد'])),
+    start: r['تاريخ البدء'], end: r['تاريخ الإتمام'], certNo: r['رقم الشهادة'], note: r['ملاحظات'],
+    approvedBy: r['اعتمدها'], issued: r['تاريخ الإصدار'],
+  };
+}
+
+/** رقم الشهادة يُحجز قبل التوليد حتى يُطبع على الشهادة ورمز QR — LockService يمنع التكرار */
+function adminReserveNumber(token, id) {
+  admin_(token);
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const all = rows_(TABS.REQ);
+    const r = all.filter(x => String(x['رقم الطلب']) === String(id))[0];
+    if (!r) throw new Error('الطلب غير موجود.');
+    if ([ST.REJECTED, ST.REVOKED].indexOf(r['الحالة']) >= 0) throw new Error('الطلب ' + r['الحالة'] + '.');
+    if (r['رقم الشهادة']) return { certNo: r['رقم الشهادة'], verifyUrl: verifyUrl_(r['رقم الشهادة']) };
+    const year = Utilities.formatDate(new Date(), tz_(), 'yyyy');
+    const pre = CONFIG.CERT_PREFIX + '-' + year + '-';
+    const max = all.map(x => String(x['رقم الشهادة'] || ''))
+      .filter(n => n.indexOf(pre) === 0).map(n => Number(n.slice(pre.length)) || 0)
+      .reduce((a, b) => Math.max(a, b), 0);
+    const certNo = pre + ('00000' + (max + 1)).slice(-6);
+    setCells_(TABS.REQ, r._row, { 'رقم الشهادة': certNo });
+    SpreadsheetApp.flush();
+    return { certNo: certNo, verifyUrl: verifyUrl_(certNo) };
+  } finally { lock.releaseLock(); }
+}
+
+/** الاعتماد: حفظ الملف + الإيميل + تحديث السجل. test=true يرسل للمراجِعة فقط ولا يغيّر شيئاً */
+function adminApprove(token, d) {
+  const by = admin_(token);
+  d = d || {};
+  const r = findReq_(d.id);
+  if ([ST.REJECTED, ST.REVOKED].indexOf(r['الحالة']) >= 0) throw new Error('لا يمكن إصدار طلب ' + r['الحالة'] + '.');
+  if (r['الحالة'] === ST.ISSUED && !d.resend && !d.test) throw new Error('الشهادة صادرة مسبقاً.');
+  if (!r['رقم الشهادة'] || r['رقم الشهادة'] !== d.certNo) throw new Error('رقم الشهادة غير مطابق. أعيدي التوليد.');
+  if (!isIsoDate_(d.start) || !isIsoDate_(d.end)) throw new Error('حددي تاريخ البدء وتاريخ الإتمام.');
+  if (d.start > d.end) throw new Error('تاريخ البدء بعد تاريخ الإتمام.');
+  const nameEn = String(d.nameEn || r['الاسم بالإنجليزي']).replace(/\s+/g, ' ').trim();
+  if (!NAME_EN_RE.test(nameEn)) throw new Error('الاسم بالإنجليزية غير صالح.');
+  if (!d.pdf) throw new Error('لم تتولد الشهادة.');
+
+  const fileName = d.certNo + ' - ' + nameEn + ' - ' + r['اسم الدورة'] + '.pdf';
+  const blob = Utilities.newBlob(Utilities.base64Decode(String(d.pdf)), 'application/pdf', fileName);
+  if (blob.getBytes().slice(0, 4).map(b => String.fromCharCode(b)).join('') !== '%PDF') throw new Error('ملف الشهادة غير صالح.');
+
+  const view = Object.assign({}, r, { 'الاسم بالإنجليزي': nameEn });
+  if (d.test) {
+    sendCertEmail_(cleanEmail_(by), view, d.certNo, blob, true);
+    return 'تم إرسال نسخة تجريبية إلى ' + by + ' (لم تتغير حالة الطلب).';
+  }
+
+  const file = DriveApp.getFolderById(prop_('CERTS_FOLDER')).createFile(blob);
+  if (r['ملف الشهادة']) { try { DriveApp.getFileById(r['ملف الشهادة']).setTrashed(true); } catch (e) { } }
+  setCells_(TABS.REQ, r._row, {
+    'الحالة': ST.ISSUED, 'تاريخ البدء': d.start, 'تاريخ الإتمام': d.end,
+    'ملف الشهادة': file.getId(), 'تاريخ الإصدار': now_(), 'اعتمدها': by,
+    'الاسم بالإنجليزي': safe_(nameEn, 80),
+  });
+  sendCertEmail_(cleanEmail_(r['البريد']), view, d.certNo, blob, false);
+  return 'صدرت الشهادة ' + d.certNo + ' وأُرسلت إلى ' + r['البريد'];
+}
+
+function adminReject(token, id, reason) {
+  const by = admin_(token);
+  const r = findReq_(id);
+  if (r['الحالة'] !== ST.PENDING) throw new Error('لا يمكن رفض طلب حالته «' + r['الحالة'] + '».');
+  reason = String(reason || '').trim();
+  if (!reason) throw new Error('اكتبي سبب الرفض ليظهر للمتدرب.');
+  setCells_(TABS.REQ, r._row, { 'الحالة': ST.REJECTED, 'ملاحظات': safe_(reason, 1000), 'اعتمدها': by });
+  MailApp.sendEmail({
+    to: r['البريد'], name: CONFIG.SENDER_NAME, replyTo: CONFIG.REPLY_TO,
+    subject: 'بخصوص طلب شهادة ' + r['اسم الدورة'],
+    htmlBody: shell_('بخصوص طلب الشهادة',
+      '<p>مرحباً ' + esc_(r['الاسم بالإنجليزي']) + '،</p>' +
+      '<p>راجعنا طلب شهادة <b>' + esc_(r['اسم الدورة']) + '</b> ولم نتمكن من إصدارها حالياً للسبب التالي:</p>' +
+      '<p style="background:#FFF4E5;padding:12px 16px;border-radius:8px">' + esc_(reason) + '</p>' +
+      '<p>يمكنك تقديم طلب جديد بعد المعالجة من <a href="' + siteUrl_() + '">موقع الشهادات</a>، أو الرد على هذه الرسالة.</p>'),
+  });
+  return 'تم الرفض وإبلاغ المتدرب.';
+}
+
+function adminRevoke(token, id, reason) {
+  const by = admin_(token);
+  const r = findReq_(id);
+  if (r['الحالة'] !== ST.ISSUED) throw new Error('الإلغاء للشهادات الصادرة فقط.');
+  setCells_(TABS.REQ, r._row, { 'الحالة': ST.REVOKED, 'ملاحظات': safe_(reason, 1000), 'اعتمدها': by });
+  return 'أُلغيت الشهادة ' + r['رقم الشهادة'] + '. صفحة التحقق ستظهرها ملغاة.';
+}
+
+/* ===================== الإيميل ===================== */
+function shell_(title, inner) {
+  const logo = CONFIG.LOGO_URL
+    ? '<img src="' + CONFIG.LOGO_URL + '" alt="سلوكيرا" style="height:44px">'
+    : '<span style="font-size:22px;font-weight:bold;color:#fff">سلوكيرا | Sulukera</span>';
+  return '<div dir="rtl" style="background:#F3F5F8;padding:24px 12px;font-family:Tahoma,Arial,sans-serif">' +
+    '<div style="max-width:600px;margin:auto;background:#fff;border-radius:12px;overflow:hidden">' +
+    '<div style="background:' + CONFIG.COLOR_DARK + ';padding:20px 24px;text-align:right">' + logo + '</div>' +
+    '<div style="padding:28px 24px;color:#222;font-size:15px;line-height:1.9;text-align:right">' +
+    '<h2 style="margin:0 0 12px;color:' + CONFIG.COLOR_DARK + '">' + esc_(title) + '</h2>' + inner + '</div>' +
+    '<div style="padding:14px 24px;background:#F8F9FB;color:#888;font-size:12px;text-align:right">' +
+    'للاستفسار: <a href="mailto:' + CONFIG.REPLY_TO + '">' + CONFIG.REPLY_TO + '</a></div></div></div>';
+}
+
+function sendCertEmail_(to, r, certNo, blob, test) {
+  const verify = verifyUrl_(certNo);
+  const btn = (href, label, bg) => '<a href="' + href + '" style="display:inline-block;background:' + bg +
+    ';color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;margin:4px 0 4px 8px">' + label + '</a>';
+  MailApp.sendEmail({
+    to: to, name: CONFIG.SENDER_NAME, replyTo: CONFIG.REPLY_TO,
+    subject: (test ? '[تجربة] ' : '') + CONFIG.SUBJECT.replace('{{course}}', r['اسم الدورة']),
+    attachments: [blob],
+    htmlBody: shell_('مبارك! 🎓',
+      (test ? '<p style="background:#FFF4E5;padding:8px 12px;border-radius:8px">نسخة تجريبية للمراجِعة — لم تُرسل للمتدرب.</p>' : '') +
+      '<p>مرحباً <span dir="ltr">' + esc_(r['الاسم بالإنجليزي']) + '</span>،</p>' +
+      '<p>يسعدنا إتمامك دورة <b dir="ltr">' + esc_(r['اسم الدورة']) + '</b>، ونرفق لك شهادتك.</p>' +
+      '<p style="background:#EEF4FB;padding:12px 16px;border-radius:8px">رقم الشهادة: <b dir="ltr">' + certNo + '</b></p>' +
+      '<p>' + btn(verify, 'صفحة التحقق من الشهادة', CONFIG.COLOR_PRIMARY) +
+      btn(siteUrl_(), 'شهاداتي', CONFIG.COLOR_DARK) + '</p>' +
+      '<p style="color:#666;font-size:13px">يمكنك تحميل شهادتك في أي وقت من «شهاداتي» بالدخول ببريدك هذا، ويمكن لأي جهة التحقق منها برمز QR المطبوع عليها.</p>' +
+      '<p>مع تمنياتنا لك بالتوفيق،<br>فريق سلوكيرا</p>'),
+  });
+}
+
+/* ===================== نقطة الدخول (API) ===================== */
+const ACTIONS = {
+  // عامة
+  requestCode: b => requestCode(b.email),
+  verifyCode: b => verifyCode(b.email, b.code),
+  verify: b => verifyCert(b.certNo),
+  courses: () => activeCourses_(),
+  // متدرب مسجّل
+  logout: b => logout(b.token),
+  getMyData: b => getMyData(b.token),
+  submitRequest: b => submitRequest(b.token, b.data),
+  downloadMyCert: b => downloadMyCert(b.token, b.certNo),
+  // إداري (كل دالة تتحقق بنفسها عبر admin_)
+  adminList: b => adminList(b.token),
+  adminGet: b => adminGet(b.token, b.id),
+  adminReserveNumber: b => adminReserveNumber(b.token, b.id),
+  adminApprove: b => adminApprove(b.token, b.data),
+  adminReject: b => adminReject(b.token, b.id, b.reason),
+  adminRevoke: b => adminRevoke(b.token, b.id, b.reason),
+};
+
+function json_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  let body;
+  try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); }
+  catch (err) { return json_({ ok: false, error: 'طلب غير صالح.' }); }
+  const fn = Object.prototype.hasOwnProperty.call(ACTIONS, body.action) ? ACTIONS[body.action] : null;
+  if (!fn) return json_({ ok: false, error: 'إجراء غير معروف.' });
+  try {
+    return json_({ ok: true, data: fn(body) });
+  } catch (err) {
+    console.error(body.action + ': ' + (err && err.stack || err));
+    return json_({ ok: false, error: String(err && err.message || err) });
+  }
+}
+
+/** GET يرجع حالة فقط (للتأكد أن النشر يعمل) */
+function doGet() {
+  return json_({ ok: true, service: 'sulukera-certificates', time: new Date().toISOString() });
+}

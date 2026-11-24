@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>شهادات سلوكيرا</title>
+<meta name="description" content="طلب شهادة إتمام الدورات من سلوكيرا، وتحميلها، والتحقق منها.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header>
+  <a class="brand" href="./">سلوكيرا | الشهادات</a>
+  <span class="who hide" id="who"><span id="whoEmail" dir="ltr"></span><a id="logout">تسجيل الخروج</a></span>
+</header>
+<main>
+
+<!-- ============ صفحة التحقق (?v=رقم) ============ -->
+<section id="vVerify" class="card narrow verify hide" aria-live="polite">
+  <div id="verifyBody"><p class="hint">جارٍ التحقق من الشهادة...</p></div>
+</section>
+
+<!-- ============ الدخول ============ -->
+<section id="vLogin" class="card narrow hide">
+  <h1>الدخول إلى شهاداتك</h1>
+  <p class="hint">أدخل البريد الإلكتروني المسجّل به في سلوكيرا، وسنرسل لك رمز دخول من 6 أرقام.</p>
+  <div id="step1">
+    <label for="lEmail">البريد الإلكتروني</label>
+    <input id="lEmail" type="email" dir="ltr" autocomplete="email" placeholder="name@example.com">
+    <div class="actions"><button id="bSend">إرسال الرمز</button></div>
+  </div>
+  <div id="step2" class="hide">
+    <label for="lCode">رمز الدخول <span class="hint">(أُرسل إلى <span id="sentTo" dir="ltr"></span>، صالح 10 دقائق)</span></label>
+    <input id="lCode" inputmode="numeric" autocomplete="one-time-code" dir="ltr" maxlength="6" placeholder="••••••">
+    <div class="actions"><button id="bVerify">دخول</button><button class="ghost" id="bBack">تغيير البريد</button></div>
+  </div>
+  <div id="lMsg" class="msg" role="alert"></div>
+</section>
+
+<!-- ============ بوابة المتدرب ============ -->
+<section id="vPortal" class="hide">
+  <div class="tabs" role="tablist"><button data-t="pNew" class="on">طلب شهادة</button><button data-t="pMine">شهاداتي</button></div>
+
+  <div id="pNew" class="card">
+    <h2>طلب شهادة إتمام</h2>
+    <label for="fCourse">الدورة</label>
+    <select id="fCourse"></select>
+
+    <label for="fNameEn">الاسم بالإنجليزية <span class="hint">كما تريده أن يظهر على الشهادة</span></label>
+    <input id="fNameEn" dir="ltr" autocomplete="name" maxlength="80" placeholder="e.g. Sara Ahmed Al-Harbi">
+    <div class="warnbox">⚠️ راجع كتابة اسمك جيداً (الحروف الكبيرة والمسافات)، فلا يمكن تعديله بعد إصدار الشهادة.</div>
+
+    <label for="fPhone">رقم الجوال <span class="hint">(اختياري)</span></label>
+    <input id="fPhone" dir="ltr" type="tel" autocomplete="tel" maxlength="20" placeholder="+9665xxxxxxxx">
+
+    <label>صورة من حسابك تُظهر نسبة إتمام الدورة</label>
+    <div class="drop" id="drop" tabindex="0" role="button">اضغط لاختيار صورة (PNG أو JPG) أو اسحبها هنا<div id="dropPrev"></div></div>
+    <input type="file" id="fProof" accept="image/png,image/jpeg,image/webp" class="hide">
+
+    <h3>استبيان الرضا <span class="hint">(إلزامي — 1 = غير راضٍ، 5 = راضٍ جداً)</span></h3>
+    <div id="survey"></div>
+    <label for="fComment">ملاحظات أو اقتراحات <span class="hint">(اختياري)</span></label>
+    <textarea id="fComment" maxlength="2000"></textarea>
+
+    <div class="actions"><button id="bSubmit">إرسال الطلب</button></div>
+    <div id="pMsg" class="msg" role="alert"></div>
+  </div>
+
+  <div id="pMine" class="card hide">
+    <h2>شهاداتي وطلباتي</h2>
+    <div id="mineList"><p class="hint">جارٍ التحميل...</p></div>
+  </div>
+</section>
+</main>
+<footer>للاستفسار: <a href="mailto:care@sulukera.com">care@sulukera.com</a></footer>
+
+<script src="assets/config.js"></script>
+<script src="assets/common.js"></script>
+<script src="assets/portal.js"></script>
+</body>
+</html>

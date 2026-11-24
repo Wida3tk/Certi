@@ -1,0 +1,4 @@
+# لا يُرفع لـ Apps Script إلا هذان الملفان
+**/**
+!Code.gs
+!appsscript.json

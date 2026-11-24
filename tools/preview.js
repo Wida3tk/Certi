@@ -3,7 +3,7 @@
 const fs = require('fs'), path = require('path');
 const { createCanvas, loadImage, registerFont } = require('canvas');
 const qrcode = require('qrcode-generator');
-const { drawCertificate } = require('./render.js');
+const { drawCertificate } = require('../assets/render.js');
 for (const f of fs.readdirSync(path.join(__dirname, 'fonts'))) {
   const m = f.match(/^(.+?)-(Bold|Regular)\.ttf$/i); if (!m) continue;
   registerFont(path.join(__dirname, 'fonts', f), { family: m[1].replace(/([a-z])([A-Z])/g, '$1 $2'), weight: /bold/i.test(m[2]) ? 'bold' : 'normal' });

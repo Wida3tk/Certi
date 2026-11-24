@@ -32,10 +32,18 @@
 - `reference/` نموذج أولي كامل على Apps Script وحده (Code.gs + Index.template.html + render.js).
   **منطق الخادم والواجهة فيه هو المرجع: انقله للبنية الجديدة ولا تُعِد اختراعه.** الفرق: الواجهة تنتقل لـ GitHub Pages،
   و`google.script.run` يُستبدل بـ fetch إلى الـ API، وتُحذف حقول الاسم العربي (الشهادات إنجليزية)، والقوالب تُقرأ من المستودع بدل Drive.
-- `tools/render.js` يرسم الشهادة على canvas (خلفية + نصوص بخط/لون/حجم/محاذاة + QR + تصغير الاسم الطويل تلقائياً ليبقى على الخط). مُختبر.
+- `assets/render.js` (كان `tools/render.js`) يرسم الشهادة على canvas (خلفية + نصوص بخط/لون/حجم/محاذاة + QR + تصغير الاسم الطويل تلقائياً ليبقى على الخط). مُختبر.
 - `templates/persuasion-influence/` أول قالب جاهز (The Art of Persuasion and Influence). معاينته في `docs/sample-certificate.jpg`.
 - `tools/psd_to_template.py` يحوّل أي PSD جديد إلى `background.jpg` + `layout.json` تلقائياً، و`tools/preview.js` يولّد `preview.png` للتأكد.
   **تحذير مهم:** لا تعتمد على `psd.composite()` وحده للخلفية: يرسم الختم الذهبي باللون الخطأ. السكربت يأخذ الصورة المدمجة الأصلية ويرقّع مناطق المتغيرات فقط.
+
+## حالة التنفيذ (تُحدَّث مع كل جلسة)
+- **تم (2026-11-24):** الهيكل، `backend/Code.gs` كـ API، `index.html` (البوابة + التحقق `?v=`)، `admin.html`، التوليد في المتصفح (`assets/generate.js`)،
+  مكتبات jsPDF و qrcode-generator منسوخة في `assets/vendor/` (لا اعتماد على CDN)، `CNAME`.
+- **الاختبارات:** `npm test` (الخلفية على محاكاة Apps Script في `tests/gas-mock.js` + مطابقة الرسم للعينة)، و`npm run test:e2e` (المسار كاملاً في Chromium عبر Playwright).
+- **بانتظار مريم:** `clasp login` ونشر الخلفية ← وضع رابط الـ Web app في `assets/config.js` (`API_URL`)؛ تفعيل GitHub Pages؛ سجل CNAME في GoDaddy؛
+  تأكيد مصدر نظام العمليات؛ ملفات PSD للدورات الباقية.
+- الإعدادات القابلة للتغيير (المشرفون، رابط الموقع، نظام العمليات) في `DEFAULTS` أعلى `backend/Code.gs` ويمكن تجاوزها من Script Properties.
 
 ## خطوات التنفيذ (بالترتيب)
 1. **الهيكل:** `index.html`، `admin.html`، `assets/` (CSS + JS مشترك + `render.js`)، `templates/`، `backend/`، `tools/`، `CNAME`.

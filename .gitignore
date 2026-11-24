@@ -1,0 +1,4 @@
+node_modules/
+.clasprc.json
+templates/*/preview.png
+tests/out/
