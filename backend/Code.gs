@@ -212,7 +212,8 @@ function courses_() {
   const hit = cache.get('courses');
   if (hit) return JSON.parse(hit);
   let res = null;
-  for (const base of [siteUrl_(), String(setting_('PAGES_URL')).replace(/\/?$/, '/')]) {
+  // النطاق ← GitHub Pages ← نسخة GitHub الخام (تعمل دائماً حتى أثناء إصدار شهادة HTTPS للنطاق)
+  for (const base of [siteUrl_(), String(setting_('PAGES_URL')).replace(/\/?$/, '/'), 'https://raw.githubusercontent.com/Wida3tk/Certi/main/']) {
     try { res = UrlFetchApp.fetch(base + 'templates/courses.json?t=' + Date.now(), { muteHttpExceptions: true }); }
     catch (e) { res = null; }
     if (res && res.getResponseCode() === 200) break;
