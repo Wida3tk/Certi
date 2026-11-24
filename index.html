@@ -4,16 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>شهادات سلوكيرا</title>
-<meta name="description" content="طلب شهادة إتمام الدورات من سلوكيرا، وتحميلها، والتحقق منها.">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+<meta name="description" content="طلب شهادة إتمام الدورات والبرامج من سلوكيرا، وتحميلها، والتحقق منها.">
+<meta name="theme-color" content="#031233">
+<link rel="icon" href="assets/img/favicon.png">
+<link rel="preload" href="assets/fonts/thmanyahsans-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
-<header>
-  <a class="brand" href="./">سلوكيرا | الشهادات</a>
-  <span class="who hide" id="who"><span id="whoEmail" dir="ltr"></span><a id="logout">تسجيل الخروج</a></span>
+<header class="hero" id="hero">
+  <div class="topbar">
+    <a class="logo" href="./" aria-label="سلوكيرا"><img src="assets/img/logo-white.png" alt="سلوكيرا Sulukera"></a>
+    <nav>
+      <span class="who hide" id="who"><span class="email" id="whoEmail" dir="ltr"></span><a class="btn-pill-dark" id="logout">تسجيل الخروج</a></span>
+      <a href="https://sulukera.com" id="homeLink">sulukera.com</a>
+    </nav>
+  </div>
+  <div class="hero-copy">
+    <h1 id="heroTitle">شهادات سلوكيرا</h1>
+    <p id="heroSub">اطلب شهادة إتمام دورتك، وحمّلها في أي وقت، وتحقق من صحتها برمز QR.</p>
+  </div>
 </header>
+
 <main>
 
 <!-- ============ صفحة التحقق (?v=رقم) ============ -->
@@ -23,8 +34,8 @@
 
 <!-- ============ الدخول ============ -->
 <section id="vLogin" class="card narrow hide">
-  <h1>الدخول إلى شهاداتك</h1>
-  <p class="hint">أدخل البريد الإلكتروني المسجّل به في سلوكيرا، وسنرسل لك رمز دخول من 6 أرقام.</p>
+  <h2>الدخول إلى شهاداتك</h2>
+  <p class="hint">أدخل البريد الإلكتروني الذي تريد استلام الشهادة عليه، وسنرسل لك رمز دخول من 6 أرقام.</p>
   <div id="step1">
     <label for="lEmail">البريد الإلكتروني</label>
     <input id="lEmail" type="email" dir="ltr" autocomplete="email" placeholder="name@example.com">
@@ -42,29 +53,54 @@
 <section id="vPortal" class="hide">
   <div class="tabs" role="tablist"><button data-t="pNew" class="on">طلب شهادة</button><button data-t="pMine">شهاداتي</button></div>
 
-  <div id="pNew" class="card">
-    <h2>طلب شهادة إتمام</h2>
-    <label for="fCourse">الدورة</label>
-    <select id="fCourse"></select>
+  <div id="pNew">
+    <div class="notice">
+      <h3>📌 قبل تقديم طلبك</h3>
+      <ul>
+        <li><b>مدة الإصدار:</b> تُصدر الشهادة خلال <span class="issueDays">يومين إلى ثلاثة أيام عمل</span> من تاريخ تقديم الطلب، علماً بأن يومي الجمعة والسبت عطلة رسمية.</li>
+        <li><b>الاسم على الشهادة:</b> يُرجى التأكد من كتابة اسمك باللغة الإنجليزية كتابةً صحيحة كما ترغب أن يظهر في الشهادة، إذ إن طلب تعديل الاسم بعد الإصدار يترتب عليه رسوم إضافية.</li>
+        <li><b>شهادة إعداد الأخصائي في تحليل السلوك التطبيقي:</b> يُشترط لإصدارها ألا تقل مدة إتمام البرنامج عن عشرة أيام (مثلاً: من بدأ في اليوم الأول من الشهر لا يكون إتمامه قبل اليوم العاشر)، ولا تُصدر الشهادة إذا كانت المدة أقل من ذلك.</li>
+        <li><b>إثبات الإتمام:</b> جهّز صورة واضحة من حسابك في المنصة تُظهر نسبة إتمام الدورة.</li>
+      </ul>
+    </div>
 
-    <label for="fNameEn">الاسم بالإنجليزية <span class="hint">كما تريده أن يظهر على الشهادة</span></label>
-    <input id="fNameEn" dir="ltr" autocomplete="name" maxlength="80" placeholder="e.g. Sara Ahmed Al-Harbi">
-    <div class="warnbox">⚠️ راجع كتابة اسمك جيداً (الحروف الكبيرة والمسافات)، فلا يمكن تعديله بعد إصدار الشهادة.</div>
+    <div class="card">
+      <h2>طلب شهادة إتمام</h2>
 
-    <label for="fPhone">رقم الجوال <span class="hint">(اختياري)</span></label>
-    <input id="fPhone" dir="ltr" type="tel" autocomplete="tel" maxlength="20" placeholder="+9665xxxxxxxx">
+      <div class="section-title"><span class="num">1</span>الدورة</div>
+      <label for="fCourse">اختر الدورة أو البرنامج</label>
+      <select id="fCourse"></select>
+      <div id="courseRule" class="warnbox hide"></div>
 
-    <label>صورة من حسابك تُظهر نسبة إتمام الدورة</label>
-    <div class="drop" id="drop" tabindex="0" role="button">اضغط لاختيار صورة (PNG أو JPG) أو اسحبها هنا<div id="dropPrev"></div></div>
-    <input type="file" id="fProof" accept="image/png,image/jpeg,image/webp" class="hide">
+      <div class="section-title"><span class="num">2</span>بياناتك</div>
+      <div class="row">
+        <div><label for="fNameAr">الاسم الثلاثي بالعربية</label><input id="fNameAr" autocomplete="name" maxlength="80" placeholder="مثال: سارة أحمد الحربي"></div>
+        <div><label for="fNameEn">الاسم الثلاثي بالإنجليزية <span class="hint">كما يظهر على الشهادة</span></label><input id="fNameEn" dir="ltr" maxlength="80" placeholder="e.g. Sara Ahmed Al-Harbi"></div>
+      </div>
+      <div class="warnbox">⚠️ يُطبع الاسم الإنجليزي على الشهادة كما تكتبه تماماً (الحروف الكبيرة والمسافات)، وتعديله بعد الإصدار يترتب عليه رسوم إضافية.</div>
+      <div class="row">
+        <div><label for="fPlatformEmail">البريد الإلكتروني المستخدم في المنصة</label><input id="fPlatformEmail" type="email" dir="ltr" maxlength="200" placeholder="name@example.com"></div>
+        <div><label for="fPhone">رقم الجوال <span class="hint">(اختياري)</span></label><input id="fPhone" dir="ltr" type="tel" autocomplete="tel" maxlength="20" placeholder="+9665xxxxxxxx"></div>
+      </div>
+      <div class="row">
+        <div><label for="fCity">المدينة</label><input id="fCity" maxlength="60" autocomplete="address-level2"></div>
+        <div></div>
+      </div>
 
-    <h3>استبيان الرضا <span class="hint">(إلزامي — 1 = غير راضٍ، 5 = راضٍ جداً)</span></h3>
-    <div id="survey"></div>
-    <label for="fComment">ملاحظات أو اقتراحات <span class="hint">(اختياري)</span></label>
-    <textarea id="fComment" maxlength="2000"></textarea>
+      <div class="section-title"><span class="num">3</span>إثبات الإتمام</div>
+      <div class="drop" id="drop" tabindex="0" role="button">اضغط لاختيار صورة من حسابك تُظهر نسبة إتمام الدورة (PNG أو JPG)، أو اسحبها هنا<div id="dropPrev"></div></div>
+      <input type="file" id="fProof" accept="image/png,image/jpeg,image/webp" class="hide">
 
-    <div class="actions"><button id="bSubmit">إرسال الطلب</button></div>
-    <div id="pMsg" class="msg" role="alert"></div>
+      <div class="section-title"><span class="num">4</span>استبيان رضا المتدربين</div>
+      <p class="hint" style="margin-top:0">يهدف هذا الاستبيان إلى التعرّف على تجربتكم التعليمية، وقياس مدى فاعلية المحتوى العلمي وأساليب التدريس في دعم تعلّمكم وتحقيق أهداف البرنامج. نقدّر مشاركتكم، ونؤمن بأن آراءكم وملاحظاتكم جزء أساسي من رحلة التحسين والتطوير المستمر.</p>
+      <div class="scale-key">مفتاح التقييم: 1 = ضعيف جداً، 2 = ضعيف، 3 = مقبول، 4 = جيد، 5 = ممتاز</div>
+      <div id="survey"></div>
+      <label for="fComment" id="commentLabel">هل لديك أي ملاحظات أو مقترحات إضافية؟</label>
+      <textarea id="fComment" maxlength="2000"></textarea>
+
+      <div class="actions"><button id="bSubmit">إرسال الطلب</button></div>
+      <div id="pMsg" class="msg" role="alert"></div>
+    </div>
   </div>
 
   <div id="pMine" class="card hide">
@@ -73,7 +109,11 @@
   </div>
 </section>
 </main>
-<footer>للاستفسار: <a href="mailto:care@sulukera.com">care@sulukera.com</a></footer>
+
+<footer><div class="in">
+  <img src="assets/img/logo-white.png" alt="سلوكيرا">
+  <span>للاستفسار: <a href="mailto:care@sulukera.com">care@sulukera.com</a> · <a href="https://sulukera.com">sulukera.com</a></span>
+</div></footer>
 
 <script src="assets/config.js"></script>
 <script src="assets/common.js"></script>

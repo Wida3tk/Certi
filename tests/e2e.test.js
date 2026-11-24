@@ -52,23 +52,35 @@ const server = http.createServer((req, res) => {
   await page.waitForSelector('#vPortal:not(.hide)');
   await page.waitForSelector('#fCourse option[value="persuasion-influence"]', { state: 'attached' });
   await page.selectOption('#fCourse', 'persuasion-influence');
+  await page.fill('#fNameAr', 'سارة أحمد الحربي');
   await page.fill('#fNameEn', 'Sara Ahmed Al-Harbi');
+  await page.fill('#fPlatformEmail', 'sara.platform@example.com');
+  await page.fill('#fCity', 'الرياض');
   await page.setInputFiles('#fProof', path.join(ROOT, 'docs/sample-certificate.jpg'));
   await page.waitForSelector('#dropPrev img');
+  assert.strictEqual(await page.$$eval('.rate', l => l.length), 11);
+  assert.strictEqual(await page.$$eval('.rate.ten button', l => l.length), 10);
   // بدون الاستبيان يُرفض
   await page.click('#bSubmit');
   assert.match(await page.textContent('#pMsg'), /استبيان/);
-  for (let i = 0; i < 5; i++) await page.click('.rate[data-i="' + i + '"] button[data-n="' + (5 - (i % 2)) + '"]');
+  for (let i = 0; i < 11; i++) await page.click('.rate[data-i="' + i + '"] button[data-n="' + (i === 10 ? 9 : 5 - (i % 2)) + '"]');
+  await page.click('#bSubmit');
+  assert.match(await page.textContent('#pMsg'), /ملاحظاتك/);
   await page.fill('#fComment', 'دورة رائعة');
   await page.screenshot({ path: path.join(OUT, '1-portal-form.png'), fullPage: true });
   await page.click('#bSubmit');
   await page.waitForFunction(() => /وصل طلبك/.test(document.querySelector('#pMsg').textContent));
+  assert.match(await page.textContent('#pMsg'), /يومين إلى ثلاثة أيام عمل/);
   // طلب مكرر
   await page.selectOption('#fCourse', 'persuasion-influence');
+  await page.fill('#fNameAr', 'سارة أحمد الحربي');
   await page.fill('#fNameEn', 'Sara Ahmed Al-Harbi');
+  await page.fill('#fPlatformEmail', 'sara.platform@example.com');
+  await page.fill('#fCity', 'الرياض');
+  await page.fill('#fComment', 'مرة ثانية');
   await page.setInputFiles('#fProof', path.join(ROOT, 'docs/sample-certificate.jpg'));
   await page.waitForSelector('#dropPrev img');
-  for (let i = 0; i < 5; i++) await page.click('.rate[data-i="' + i + '"] button[data-n="4"]');
+  for (let i = 0; i < 11; i++) await page.click('.rate[data-i="' + i + '"] button[data-n="4"]');
   await page.click('#bSubmit');
   await page.waitForFunction(() => /قيد المراجعة/.test(document.querySelector('#pMsg').textContent));
   await page.click('button[data-t="pMine"]');
@@ -82,6 +94,7 @@ const server = http.createServer((req, res) => {
   await login('maryam@sulukera.com');
   await page.waitForSelector('#vAdmin:not(.hide)');
   await page.waitForSelector('tr.click');
+  assert.match(await page.textContent('#aList'), /سارة أحمد الحربي/);
   await page.screenshot({ path: path.join(OUT, '3-admin-list.png'), fullPage: true });
   await page.click('tr.click');
   await page.waitForSelector('#dProof img');
@@ -107,7 +120,7 @@ const server = http.createServer((req, res) => {
   await page.click('#bOk');
   await page.waitForFunction(() => /صدرت الشهادة/.test(document.querySelector('#dMsg').textContent));
   assert.strictEqual(env.mails[1].to, 'sara@example.com');
-  const certNo = env.sheet('الطلبات').data[1][13];
+  const sh = env.sheet('الطلبات'); const certNo = sh.data[1][sh.data[0].indexOf('رقم الشهادة')];
   assert.match(certNo, /^SLK-\d{4}-000001$/);
 
   // ---------- التحقق (رابط QR) ----------

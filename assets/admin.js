@@ -26,8 +26,9 @@ function renderList() {
     (!q || [r.nameEn, r.email, r.certNo, r.id, r.course].some(x => String(x || '').toLowerCase().includes(q))));
   $('aList').innerHTML = !l.length ? '<p class="hint">لا توجد طلبات.</p>' :
     '<table><tr><th>التاريخ</th><th>الاسم</th><th>الدورة</th><th>في العمليات</th><th>الحالة</th></tr>' +
-    l.map(r => '<tr class="click" data-id="' + esc(r.id) + '"><td dir="ltr" style="text-align:right">' + esc(r.date) + '</td><td><span dir="ltr">' +
-      esc(r.nameEn) + '</span><div class="hint" dir="ltr" style="text-align:right">' + esc(r.email) + '</div></td><td dir="ltr" style="text-align:right">' + esc(r.course) + '</td><td>' +
+    l.map(r => '<tr class="click" data-id="' + esc(r.id) + '"><td dir="ltr" style="text-align:right">' + esc(r.date) + '</td><td>' +
+      esc(r.nameAr || '') + '<div dir="ltr" style="text-align:right">' + esc(r.nameEn) + '</div><div class="hint" dir="ltr" style="text-align:right">' + esc(r.email) + '</div></td><td>' + esc(r.course) +
+      (r.type ? '<div class="hint">' + esc(r.type) + '</div>' : '') + '</td><td>' +
       (r.inOps === 'نعم' ? '✓ نعم' : r.inOps === 'لا' ? '✗ لا' : '⚠️ ' + esc(r.inOps)) + '</td><td>' + pill(r.status) +
       (r.certNo ? '<div class="hint" dir="ltr" style="text-align:right">' + esc(r.certNo) + '</div>' : '') + '</td></tr>').join('') + '</table>';
   document.querySelectorAll('tr.click').forEach(tr => tr.onclick = () => openReq(tr.dataset.id));
@@ -49,11 +50,11 @@ async function openReq(id) {
   clearMsg($('dMsg')); GEN = null; CUR = null;
   try {
     const r = CUR = await api('adminGet', { token: SESSION.token, id: id });
-    $('dTitle').innerHTML = '<span dir="ltr">' + esc(r.nameEn) + '</span> ' + pill(r.status);
+    $('dTitle').innerHTML = esc(r.nameAr || r.nameEn) + ' ' + pill(r.status);
     $('dProof').innerHTML = r.proof ? '<img alt="صورة الإتمام" id="proofImg" src="' + r.proof + '">' : '<p class="hint">لا توجد صورة.</p>';
     if ($('proofImg')) $('proofImg').onclick = () => { const w = window.open(); if (w) { w.document.title = 'صورة الإتمام'; const i = w.document.createElement('img'); i.src = r.proof; i.style.maxWidth = '100%'; w.document.body.appendChild(i); } };
     $('dOps').innerHTML = opsBox(r.ops, 'وقت تقديم الطلب') + opsBox(r.opsNow, 'الآن');
-    $('dNameEn').value = r.nameEn || '';
+    $('dNameEn').value = r.nameEn || ''; $('dNameAr').value = r.nameAr || '';
     // اقتراح التواريخ مع ذكر مصدر كل قيمة
     const o = (r.opsNow || []).filter(x => !x.error && (x.activated || x.registered))[0] ||
               (r.ops || []).filter(x => !x.error && (x.activated || x.registered))[0];
@@ -67,12 +68,18 @@ async function openReq(id) {
     } else { $('dStart').value = ''; setSrc('dStartSrc', 'المصدر: لا يوجد — أدخليه يدوياً من عصارة', true); }
     if (r.end) { $('dEnd').value = r.end; setSrc('dEndSrc', 'المصدر: محفوظ عند الإصدار السابق'); }
     else { $('dEnd').value = r.date; setSrc('dEndSrc', 'المصدر: تاريخ تقديم الطلب (افتراضي)'); }
-    $('dMeta').innerHTML = 'الدورة: <b dir="ltr">' + esc(r.course) + '</b><br>البريد: <span dir="ltr">' + esc(r.email) + '</span>' +
+    $('dMeta').innerHTML = 'الدورة: <b>' + esc(r.course) + '</b>' + (r.type ? ' (' + esc(r.type) + ')' : '') +
+      (r.courseEn ? '<br><span dir="ltr">' + esc(r.courseEn) + '</span>' : '') +
+      (r.minDays ? '<br>شرط الإصدار: مدة إتمام ' + r.minDays + ' أيام على الأقل' : '') +
+      '<br>البريد: <span dir="ltr">' + esc(r.email) + '</span>' +
+      (r.platformEmail ? ' · بريد المنصة: <span dir="ltr">' + esc(r.platformEmail) + '</span>' : '') +
+      (r.city ? ' · المدينة: ' + esc(r.city) : '') +
       (r.phone ? ' · الجوال: <span dir="ltr">' + esc(r.phone) + '</span>' : '') +
       '<br>رقم الطلب: <span dir="ltr">' + esc(r.id) + '</span> · تاريخ الطلب: ' + esc(r.date) +
       (r.certNo ? '<br>رقم الشهادة: <b dir="ltr">' + esc(r.certNo) + '</b>' : '') +
       (r.approvedBy ? '<br>آخر إجراء بواسطة: <span dir="ltr">' + esc(r.approvedBy) + '</span>' : '') +
       (r.note ? '<br>ملاحظات: ' + esc(r.note) : '');
+    checkDays();
     const canGen = r.status === ST.PENDING || r.status === ST.ISSUED;
     $('bGen').classList.toggle('hide', !canGen);
     ['dNameEn', 'dStart', 'dEnd'].forEach(i => $(i).disabled = !canGen);
@@ -100,6 +107,18 @@ function renderActs() {
     catch (e) { msg($('dMsg'), e.message, 'err'); }
   };
 }
+/** شرط الحد الأدنى لمدة الإتمام (يومي البدء والانتهاء محسوبان): يُعرض ويمنع التوليد. الخادم يتحقق أيضاً */
+function daysInclusive(a, b) { const t = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)); return Math.round((t(b) - t(a)) / 864e5) + 1; }
+function checkDays() {
+  const box = $('dDays'), a = $('dStart').value, b = $('dEnd').value;
+  if (!CUR || !a || !b) { box.className = 'hide'; return true; }
+  const n = daysInclusive(a, b);
+  const bad = CUR.minDays && n < CUR.minDays;
+  box.className = bad ? 'errbox' : 'tag';
+  box.textContent = 'مدة الإتمام: ' + n + (n === 1 ? ' يوم' : ' أيام') + (bad ? ' — أقل من ' + CUR.minDays + ' أيام المشروطة لهذه الشهادة، لا يمكن إصدارها.' : '');
+  return !bad;
+}
+['dStart', 'dEnd'].forEach(i => $(i).addEventListener('input', checkDays));
 ['dNameEn', 'dStart', 'dEnd'].forEach(i => $(i).addEventListener('input', () => {
   if (GEN) { GEN = null; $('prev').innerHTML = ''; renderActs(); msg($('dMsg'), 'تغيّرت البيانات — أعيدي التوليد.', 'info'); }
 }));
@@ -117,6 +136,7 @@ $('bGen').onclick = async () => {
     if (!nameEn) throw new Error('الاسم فارغ.');
     if (!$('dStart').value || !$('dEnd').value) throw new Error('حددي تاريخ البدء وتاريخ الانتهاء.');
     if ($('dStart').value > $('dEnd').value) throw new Error('تاريخ البدء بعد تاريخ الانتهاء!');
+    if (!checkDays()) throw new Error('مدة الإتمام أقل من المشروط لهذه الشهادة.');
     // يُحجز رقم الشهادة أولاً حتى يُطبع على الشهادة وفي رمز QR
     const num = await api('adminReserveNumber', { token: SESSION.token, id: CUR.id });
     CUR.certNo = num.certNo;

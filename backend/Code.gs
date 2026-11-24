@@ -36,14 +36,23 @@ const CONFIG = {
   COLOR_DARK: '#1F3A5F',
   LOGO_URL: '',                 // اختياري: رابط عام لشعار سلوكيرا (PNG)
   CERT_PREFIX: 'SLK',           // رقم الشهادة: SLK-2026-000001
-  // استبيان الرضا الإلزامي قبل الطلب (تقييم 1–5 لكل سؤال + تعليق)
+  // استبيان رضا المتدربين (إلزامي قبل الطلب) — من نموذج «استبيان رضا المتدربين - دورات مسجلة»
+  // max: أعلى درجة (5 = ضعيف جداً..ممتاز، 10 = مقياس التوصية). التعليق في آخره إلزامي.
   SURVEY: [
-    'مدى رضاك العام عن الدورة',
-    'وضوح المحتوى العلمي',
-    'أداء المحاضر',
-    'سهولة استخدام المنصة',
-    'احتمال أن توصي بسلوكيرا لغيرك',
+    { section: 'المحتوى العلمي', q: 'كان محتوى الدورة منظماً ومتسلسلاً بصورة مناسبة', max: 5 },
+    { section: 'المحتوى العلمي', q: 'كانت المصادر التعليمية المرفقة داعمة لعملية التعلم', max: 5 },
+    { section: 'المحتوى العلمي', q: 'حققت الدورة الأهداف التعليمية التي توقعتها', max: 5 },
+    { section: 'تجربة التعلم عبر المنصة', q: 'كانت المنصة التعليمية سهلة الاستخدام', max: 5 },
+    { section: 'تجربة التعلم عبر المنصة', q: 'كان الوصول إلى المحاضرات والمواد التعليمية واضحاً', max: 5 },
+    { section: 'الاستفادة', q: 'اكتسبت معارف أو مهارات جديدة من خلال هذه الدورة', max: 5 },
+    { section: 'الاستفادة', q: 'أرى أن الدورة قدّمت قيمة تعليمية مناسبة', max: 5 },
+    { section: 'الدعم الأكاديمي', q: 'كان الوصول إلى فريق الدعم سهلاً عند الحاجة', max: 5 },
+    { section: 'الدعم الأكاديمي', q: 'كانت استجابة فريق الدعم مناسبة من حيث الوقت', max: 5 },
+    { section: 'الدعم الأكاديمي', q: 'كانت إجابات فريق الدعم واضحة ومفيدة', max: 5 },
+    { section: 'صوتك يهمنا', q: 'ما مدى احتمالية أن توصي بهذا البرنامج لشخص مهتم بنفس المجال؟', max: 10 },
   ],
+  SURVEY_COMMENT: 'هل لديك أي ملاحظات أو مقترحات إضافية؟',
+  ISSUE_DAYS: 'يومين إلى ثلاثة أيام عمل',  // مدة الإصدار كما تظهر للمتدرب وفي الإيميلات
   MAX_UPLOAD_MB: 5,
   SESSION_HOURS: 6,
 };
@@ -58,15 +67,16 @@ function verifyUrl_(certNo) { return siteUrl_() + '?v=' + encodeURIComponent(cer
 /* ===================== الأوراق ===================== */
 const TABS = { REQ: 'الطلبات', SURVEY: 'الرضا' };
 const REQ_HEADERS = [
-  'رقم الطلب', 'تاريخ الطلب', 'الاسم بالإنجليزي', 'البريد', 'الجوال',
-  'معرّف الدورة', 'اسم الدورة', 'صورة الإتمام', 'موجود في العمليات', 'بيانات العمليات',
+  'رقم الطلب', 'تاريخ الطلب', 'الاسم بالإنجليزي', 'الاسم بالعربي', 'البريد', 'البريد في المنصة', 'الجوال', 'المدينة',
+  'معرّف الدورة', 'اسم الدورة', 'اسم الدورة (EN)', 'نوع البرنامج', 'صورة الإتمام', 'موجود في العمليات', 'بيانات العمليات',
   'الحالة', 'تاريخ البدء', 'تاريخ الإتمام', 'رقم الشهادة', 'ملف الشهادة', 'تاريخ الإصدار',
   'اعتمدها', 'ملاحظات',
 ];
 // أعمدة تُحفظ نصاً كما هي (حتى لا يحوّل الشيت الجوال لرقم أو التاريخ لكائن تاريخ)
 const TEXT_COLS = ['تاريخ الطلب', 'الجوال', 'تاريخ البدء', 'تاريخ الإتمام', 'رقم الشهادة', 'تاريخ الإصدار'];
 const SURVEY_HEADERS = ['رقم الطلب', 'التاريخ', 'البريد', 'الدورة']
-  .concat(CONFIG.SURVEY).concat(['تعليق']);
+  .concat(CONFIG.SURVEY.map(s => s.q)).concat([CONFIG.SURVEY_COMMENT]);
+const TYPE_LABEL = { short: 'دورة قصيرة', long: 'برنامج طويل' };
 
 const ST = { PENDING: 'بانتظار المراجعة', ISSUED: 'صادرة', REJECTED: 'مرفوضة', REVOKED: 'ملغاة' };
 
@@ -126,6 +136,11 @@ function now_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:
 function cleanEmail_(e) { return String(e || '').trim().toLowerCase(); }
 function isEmail_(e) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) && e.length <= 200; }
 function isIsoDate_(d) { return /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')); }
+/** عدد أيام الإتمام شاملاً يومي البدء والانتهاء: من 1 إلى 10 = 10 أيام */
+function daysInclusive_(start, end) {
+  const t = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
+  return Math.round((t(end) - t(start)) / 86400000) + 1;
+}
 function esc_(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -173,12 +188,16 @@ function courses_() {
   const res = UrlFetchApp.fetch(siteUrl_() + 'templates/courses.json?t=' + Date.now(), { muteHttpExceptions: true });
   if (res.getResponseCode() !== 200) throw new Error('تعذّرت قراءة قائمة الدورات من الموقع.');
   const list = JSON.parse(res.getContentText())
-    .filter(c => c && c.id && c.name)
-    .map(c => ({ id: String(c.id), name: String(c.name), active: c.active !== false }));
+    .filter(c => c && c.id && c.name && c.nameAr)
+    .map(c => ({ id: String(c.id), nameAr: String(c.nameAr), name: String(c.name),
+      type: c.type === 'long' ? 'long' : 'short', minDays: Number(c.minDays) || 0, active: c.active === true }));
   cache.put('courses', JSON.stringify(list), 600);
   return list;
 }
-function activeCourses_() { return courses_().filter(c => c.active).map(c => ({ id: c.id, name: c.name })); }
+function activeCourses_() {
+  return courses_().filter(c => c.active).map(c => ({ id: c.id, nameAr: c.nameAr, name: c.name, type: c.type, minDays: c.minDays }));
+}
+function courseById_(id) { return courses_().filter(c => c.id === String(id))[0] || null; }
 
 /* ===================== الدخول برمز ===================== */
 function otp_() {
@@ -261,6 +280,8 @@ function getMyData(token) {
     isAdmin: isAdmin_(email),
     courses: activeCourses_(),
     survey: CONFIG.SURVEY,
+    surveyComment: CONFIG.SURVEY_COMMENT,
+    issueDays: CONFIG.ISSUE_DAYS,
     maxMb: CONFIG.MAX_UPLOAD_MB,
     requests: mine.map(r => ({
       id: r['رقم الطلب'], course: r['اسم الدورة'], date: String(r['تاريخ الطلب']).slice(0, 10),
@@ -272,20 +293,27 @@ function getMyData(token) {
 }
 
 const NAME_EN_RE = /^[A-Za-zÀ-ɏ][A-Za-zÀ-ɏ .'\-]{1,79}$/;
+const NAME_AR_RE = /^[؀-ۿ][؀-ۿ\s]{1,79}$/;
+const clean_ = s => String(s || '').replace(/\s+/g, ' ').trim();
 
 function submitRequest(token, d) {
   const email = who_(token);
   d = d || {};
-  const nameEn = String(d.nameEn || '').replace(/\s+/g, ' ').trim();
+  const nameEn = clean_(d.nameEn), nameAr = clean_(d.nameAr), city = clean_(d.city);
+  const platformEmail = cleanEmail_(d.platformEmail);
+  if (!nameAr || !NAME_AR_RE.test(nameAr)) throw new Error('اكتب اسمك الثلاثي بالعربية.');
   if (!nameEn) throw new Error('اكتب اسمك بالإنجليزية كما تريده على الشهادة.');
   if (!NAME_EN_RE.test(nameEn)) throw new Error('الاسم يُكتب بالحروف الإنجليزية فقط (مثال: Sara Ahmed Al-Harbi).');
+  if (!isEmail_(platformEmail)) throw new Error('اكتب البريد الإلكتروني المستخدم في المنصة.');
+  if (!city) throw new Error('اكتب المدينة.');
   const course = activeCourses_().filter(c => c.id === String(d.courseId))[0];
   if (!course) throw new Error('اختر الدورة.');
   if (!d.proof || !d.proof.data) throw new Error('ارفع صورة نسبة الإتمام من حسابك.');
   if (!/^image\/(png|jpe?g|webp)$/.test(String(d.proof.type))) throw new Error('الصورة يجب أن تكون PNG أو JPG.');
   if (!Array.isArray(d.survey) || d.survey.length !== CONFIG.SURVEY.length ||
-    d.survey.some(v => !(Number(v) >= 1 && Number(v) <= 5 && Number(v) % 1 === 0)))
-    throw new Error('أكمل استبيان الرضا.');
+    d.survey.some((v, i) => !(Number(v) >= 1 && Number(v) <= CONFIG.SURVEY[i].max && Number(v) % 1 === 0)))
+    throw new Error('أكمل جميع أسئلة استبيان الرضا.');
+  if (!clean_(d.comment)) throw new Error('اكتب ملاحظاتك أو مقترحاتك في آخر الاستبيان.');
   const bytes = Utilities.base64Decode(String(d.proof.data));
   if (bytes.length > CONFIG.MAX_UPLOAD_MB * 1024 * 1024) throw new Error('حجم الصورة أكبر من المسموح.');
 
@@ -305,17 +333,31 @@ function submitRequest(token, d) {
     const ops = opsLookup_(email);
     const okOps = ops.filter(o => !o.error);
     appendObj_(TABS.REQ, REQ_HEADERS, {
-      'رقم الطلب': id, 'تاريخ الطلب': now_(), 'الاسم بالإنجليزي': safe_(nameEn, 80),
-      'البريد': email, 'الجوال': safe_(d.phone, 30),
-      'معرّف الدورة': course.id, 'اسم الدورة': course.name, 'صورة الإتمام': file.getId(),
+      'رقم الطلب': id, 'تاريخ الطلب': now_(), 'الاسم بالإنجليزي': safe_(nameEn, 80), 'الاسم بالعربي': safe_(nameAr, 80),
+      'البريد': email, 'البريد في المنصة': safe_(platformEmail, 200), 'الجوال': safe_(d.phone, 30), 'المدينة': safe_(city, 60),
+      'معرّف الدورة': course.id, 'اسم الدورة': course.nameAr, 'اسم الدورة (EN)': course.name,
+      'نوع البرنامج': TYPE_LABEL[course.type], 'صورة الإتمام': file.getId(),
       'موجود في العمليات': ops.some(o => o.error) ? 'تعذّرت القراءة' : (okOps.length ? 'نعم' : 'لا'),
       'بيانات العمليات': JSON.stringify(ops),
       'الحالة': ST.PENDING,
     });
-    const s = {}; s['رقم الطلب'] = id; s['التاريخ'] = now_(); s['البريد'] = email; s['الدورة'] = course.name;
-    CONFIG.SURVEY.forEach((q, i) => s[q] = Number(d.survey[i]));
-    s['تعليق'] = safe_(d.comment, 2000);
+    const s = {}; s['رقم الطلب'] = id; s['التاريخ'] = now_(); s['البريد'] = email; s['الدورة'] = course.nameAr;
+    CONFIG.SURVEY.forEach((x, i) => s[x.q] = Number(d.survey[i]));
+    s[CONFIG.SURVEY_COMMENT] = safe_(d.comment, 2000);
     appendObj_(TABS.SURVEY, SURVEY_HEADERS, s);
+    try {
+      MailApp.sendEmail({
+        to: email, name: CONFIG.SENDER_NAME, replyTo: CONFIG.REPLY_TO,
+        subject: 'استلمنا طلب شهادتك | ' + course.nameAr,
+        htmlBody: shell_('استلمنا طلبك',
+          '<p>مرحباً ' + esc_(nameAr) + '،</p>' +
+          '<p>وصلنا طلب شهادة <b>' + esc_(course.nameAr) + '</b> (رقم الطلب <span dir="ltr">' + id + '</span>).</p>' +
+          '<p style="background:#EEF4FB;padding:12px 16px;border-radius:8px">تُصدر الشهادة خلال ' + CONFIG.ISSUE_DAYS +
+          '، علماً بأن يومي الجمعة والسبت عطلة رسمية. ستصلك على بريدك هذا، وتجدها أيضاً في «شهاداتي».</p>' +
+          '<p>الاسم كما سيظهر على الشهادة: <b dir="ltr">' + esc_(nameEn) + '</b></p>' +
+          '<p style="color:#666;font-size:13px">إذا كان في الاسم خطأ، يُرجى الرد على هذه الرسالة قبل إصدار الشهادة؛ فتعديل الاسم بعد الإصدار يترتب عليه رسوم إضافية.</p>'),
+      });
+    } catch (e) { console.error('confirm mail: ' + e); }
     return id;
   } finally { lock.releaseLock(); }
 }
@@ -335,7 +377,7 @@ function verifyCert(certNo) {
   if (!/^[A-Z]{2,5}-\d{4}-\d{6}$/.test(certNo)) return { status: 'notfound', certNo: certNo };
   const r = rows_(TABS.REQ).filter(x => x['رقم الشهادة'] === certNo)[0];
   if (r && r['الحالة'] === ST.ISSUED) {
-    return { status: 'valid', certNo: certNo, name: r['الاسم بالإنجليزي'], course: r['اسم الدورة'],
+    return { status: 'valid', certNo: certNo, name: r['الاسم بالإنجليزي'], course: r['اسم الدورة (EN)'] || r['اسم الدورة'], courseAr: r['اسم الدورة'],
       start: r['تاريخ البدء'], end: r['تاريخ الإتمام'], issued: String(r['تاريخ الإصدار']).slice(0, 10) };
   }
   if (r && r['الحالة'] === ST.REVOKED) return { status: 'revoked', certNo: certNo };
@@ -369,7 +411,7 @@ function adminList(token) {
   admin_(token);
   return rows_(TABS.REQ).map(r => ({
     id: r['رقم الطلب'], date: String(r['تاريخ الطلب']).slice(0, 10),
-    nameEn: r['الاسم بالإنجليزي'], email: r['البريد'], course: r['اسم الدورة'],
+    nameEn: r['الاسم بالإنجليزي'], nameAr: r['الاسم بالعربي'], email: r['البريد'], course: r['اسم الدورة'], type: r['نوع البرنامج'],
     inOps: r['موجود في العمليات'], status: r['الحالة'], certNo: r['رقم الشهادة'],
     issued: r['تاريخ الإصدار'],
   })).reverse();
@@ -385,9 +427,12 @@ function adminGet(token, id) {
   } catch (e) { }
   let ops = [];
   try { ops = JSON.parse(r['بيانات العمليات'] || '[]'); } catch (e) { }
+  const c = courseById_(r['معرّف الدورة']);
   return {
-    id: r['رقم الطلب'], nameEn: r['الاسم بالإنجليزي'], email: r['البريد'],
-    phone: r['الجوال'], courseId: String(r['معرّف الدورة']), course: r['اسم الدورة'],
+    id: r['رقم الطلب'], nameEn: r['الاسم بالإنجليزي'], nameAr: r['الاسم بالعربي'], email: r['البريد'],
+    platformEmail: r['البريد في المنصة'], city: r['المدينة'],
+    phone: r['الجوال'], courseId: String(r['معرّف الدورة']), course: r['اسم الدورة'], courseEn: r['اسم الدورة (EN)'],
+    type: r['نوع البرنامج'], minDays: c ? c.minDays : 0,
     date: String(r['تاريخ الطلب']).slice(0, 10), status: r['الحالة'], proof: proof,
     ops: ops, opsNow: opsLookup_(cleanEmail_(r['البريد'])),
     start: r['تاريخ البدء'], end: r['تاريخ الإتمام'], certNo: r['رقم الشهادة'], note: r['ملاحظات'],
@@ -427,11 +472,15 @@ function adminApprove(token, d) {
   if (!r['رقم الشهادة'] || r['رقم الشهادة'] !== d.certNo) throw new Error('رقم الشهادة غير مطابق. أعيدي التوليد.');
   if (!isIsoDate_(d.start) || !isIsoDate_(d.end)) throw new Error('حددي تاريخ البدء وتاريخ الإتمام.');
   if (d.start > d.end) throw new Error('تاريخ البدء بعد تاريخ الإتمام.');
+  const course = courseById_(r['معرّف الدورة']);
+  if (course && course.minDays && daysInclusive_(d.start, d.end) < course.minDays)
+    throw new Error('مدة الإتمام ' + daysInclusive_(d.start, d.end) + ' أيام، وهذه الشهادة تشترط ' + course.minDays + ' أيام على الأقل. لا يمكن إصدارها.');
   const nameEn = String(d.nameEn || r['الاسم بالإنجليزي']).replace(/\s+/g, ' ').trim();
   if (!NAME_EN_RE.test(nameEn)) throw new Error('الاسم بالإنجليزية غير صالح.');
   if (!d.pdf) throw new Error('لم تتولد الشهادة.');
 
-  const fileName = d.certNo + ' - ' + nameEn + ' - ' + r['اسم الدورة'] + '.pdf';
+  const fileName = (d.certNo + ' - ' + nameEn + ' - ' + (r['اسم الدورة (EN)'] || r['معرّف الدورة']))
+    .replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').slice(0, 150).trim() + '.pdf';
   const blob = Utilities.newBlob(Utilities.base64Decode(String(d.pdf)), 'application/pdf', fileName);
   if (blob.getBytes().slice(0, 4).map(b => String.fromCharCode(b)).join('') !== '%PDF') throw new Error('ملف الشهادة غير صالح.');
 
@@ -463,7 +512,7 @@ function adminReject(token, id, reason) {
     to: r['البريد'], name: CONFIG.SENDER_NAME, replyTo: CONFIG.REPLY_TO,
     subject: 'بخصوص طلب شهادة ' + r['اسم الدورة'],
     htmlBody: shell_('بخصوص طلب الشهادة',
-      '<p>مرحباً ' + esc_(r['الاسم بالإنجليزي']) + '،</p>' +
+      '<p>مرحباً ' + esc_(r['الاسم بالعربي'] || r['الاسم بالإنجليزي']) + '،</p>' +
       '<p>راجعنا طلب شهادة <b>' + esc_(r['اسم الدورة']) + '</b> ولم نتمكن من إصدارها حالياً للسبب التالي:</p>' +
       '<p style="background:#FFF4E5;padding:12px 16px;border-radius:8px">' + esc_(reason) + '</p>' +
       '<p>يمكنك تقديم طلب جديد بعد المعالجة من <a href="' + siteUrl_() + '">موقع الشهادات</a>، أو الرد على هذه الرسالة.</p>'),
@@ -503,8 +552,8 @@ function sendCertEmail_(to, r, certNo, blob, test) {
     attachments: [blob],
     htmlBody: shell_('مبارك! 🎓',
       (test ? '<p style="background:#FFF4E5;padding:8px 12px;border-radius:8px">نسخة تجريبية للمراجِعة — لم تُرسل للمتدرب.</p>' : '') +
-      '<p>مرحباً <span dir="ltr">' + esc_(r['الاسم بالإنجليزي']) + '</span>،</p>' +
-      '<p>يسعدنا إتمامك دورة <b dir="ltr">' + esc_(r['اسم الدورة']) + '</b>، ونرفق لك شهادتك.</p>' +
+      '<p>مرحباً ' + esc_(r['الاسم بالعربي'] || r['الاسم بالإنجليزي']) + '،</p>' +
+      '<p>يسعدنا إتمامك <b>' + esc_(r['اسم الدورة']) + '</b>، ونرفق لك شهادتك.</p>' +
       '<p style="background:#EEF4FB;padding:12px 16px;border-radius:8px">رقم الشهادة: <b dir="ltr">' + certNo + '</b></p>' +
       '<p>' + btn(verify, 'صفحة التحقق من الشهادة', CONFIG.COLOR_PRIMARY) +
       btn(siteUrl_(), 'شهاداتي', CONFIG.COLOR_DARK) + '</p>' +

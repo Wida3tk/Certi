@@ -36,8 +36,10 @@ function makeSheet(name) {
 
 function createEnv(opts = {}) {
   const props = {}, cache = new Map(), files = {}, mails = [], spreadsheets = {};
-  const site = opts.coursesJson || JSON.stringify([{ id: 'persuasion-influence', name: 'The Art of Persuasion and Influence', active: true },
-    { id: 'old-course', name: 'Old', active: false }]);
+  const site = opts.coursesJson || JSON.stringify([
+    { id: 'persuasion-influence', nameAr: 'فن الإقناع والتأثير', name: 'The Art of Persuasion and Influence', type: 'short', active: true },
+    { id: 'specialist', nameAr: 'إعداد الأخصائي', name: 'ABA Specialist', type: 'short', minDays: 10, active: true },
+    { id: 'old-course', nameAr: 'قديمة', name: 'Old', active: false }]);
   let nextId = 1;
   const newId = p => p + (nextId++);
 

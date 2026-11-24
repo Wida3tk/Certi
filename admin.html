@@ -5,21 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>سلوكيرا | مراجعة الشهادات</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#031233">
+<link rel="icon" href="assets/img/favicon.png">
 <link rel="stylesheet" href="assets/style.css">
 <script src="assets/vendor/jspdf.umd.min.js"></script>
 <script src="assets/vendor/qrcode.js"></script>
 </head>
 <body>
-<header>
-  <a class="brand" href="admin.html">سلوكيرا | مراجعة الشهادات</a>
-  <span class="who hide" id="who"><span id="whoEmail" dir="ltr"></span><a id="logout">تسجيل الخروج</a></span>
+<header class="hero compact" id="hero">
+  <div class="topbar">
+    <a class="logo" href="admin.html" aria-label="سلوكيرا"><img src="assets/img/logo-white.png" alt="سلوكيرا Sulukera"></a>
+    <nav><span class="who hide" id="who"><span class="email" id="whoEmail" dir="ltr"></span><a class="btn-pill-dark" id="logout">تسجيل الخروج</a></span></nav>
+  </div>
+  <div class="hero-copy"><h1>لوحة مراجعة الشهادات</h1><p>مراجعة الطلبات، وتوليد الشهادات، واعتمادها وإرسالها.</p></div>
 </header>
 <main>
 
 <section id="vLogin" class="card narrow hide">
-  <h1>دخول لوحة المراجعة</h1>
+  <h2>دخول لوحة المراجعة</h2>
   <p class="hint">للمشرفين فقط. أدخلي بريدك وسيصلك رمز دخول.</p>
   <div id="step1">
     <label for="lEmail">البريد الإلكتروني</label>
@@ -58,8 +61,12 @@
       <div>
         <h3>بيانات الشهادة</h3>
         <label for="dNameEn">الاسم بالإنجليزية</label><input id="dNameEn" dir="ltr" maxlength="80">
+        <div class="row" style="gap:10px">
+          <div><label>الاسم بالعربية</label><input id="dNameAr" disabled></div>
+        </div>
         <label for="dStart">تاريخ البدء</label><input id="dStart" type="date"><div class="tag" id="dStartSrc"></div>
         <label for="dEnd">تاريخ الانتهاء</label><input id="dEnd" type="date"><div class="tag" id="dEndSrc"></div>
+        <div id="dDays" class="hide"></div>
         <div class="src" id="dMeta"></div>
         <div class="actions"><button id="bGen">توليد ومعاينة</button></div>
       </div>
@@ -74,6 +81,8 @@
   </div>
 </section>
 </main>
+
+<footer><div class="in"><img src="assets/img/logo-white.png" alt="سلوكيرا"><span>لوحة داخلية — للمشرفين فقط</span></div></footer>
 
 <script src="assets/config.js"></script>
 <script src="assets/common.js"></script>

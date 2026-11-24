@@ -20,8 +20,10 @@ function login(env, email) {
   return r.data.token;
 }
 function fresh(opts) { const env = createEnv(opts); env.ctx.setup(); return env; }
-const form = (over = {}) => Object.assign({ courseId: 'persuasion-influence', nameEn: 'Sara Ahmed Al-Harbi', phone: '0501234567',
-  proof: { type: 'image/png', data: PNG }, survey: [5, 4, 5, 3, 5], comment: 'ممتازة' }, over);
+const SURVEY = [5, 4, 5, 3, 5, 4, 5, 5, 4, 5, 9];
+const form = (over = {}) => Object.assign({ courseId: 'persuasion-influence', nameEn: 'Sara Ahmed Al-Harbi', nameAr: 'سارة أحمد الحربي',
+  platformEmail: 'sara.platform@x.com', city: 'الرياض', phone: '0501234567',
+  proof: { type: 'image/png', data: PNG }, survey: SURVEY, comment: 'ممتازة' }, over);
 
 test('setup ينشئ تبويبي الطلبات والرضا فقط', () => {
   const env = fresh();
@@ -39,12 +41,15 @@ test('متدرب جديد: دخول برمز ← طلب كامل ← يظهر ف
   const env = fresh({ opsRows: [['س', 'sara@x.com', 'الإقناع', new Date(2026, 8, 1), new Date(2026, 8, 7)]] });
   const t = login(env, 'Sara@X.com');
   const me = env.api('getMyData', { token: t }).data;
-  assert.strictEqual(me.courses.map(c => c.id).join(), 'persuasion-influence'); // غير المفعّلة مخفية
-  assert.strictEqual(me.survey.length, 5);
+  assert.strictEqual(me.courses.map(c => c.id).join(), 'persuasion-influence,specialist');
+  assert.strictEqual(me.courses[0].nameAr, 'فن الإقناع والتأثير'); // غير المفعّلة مخفية
+  assert.strictEqual(me.survey.length, 11);
   const r = env.api('submitRequest', { token: t, data: form() });
   assert.strictEqual(r.ok, true, r.error);
   assert.strictEqual(env.sheet('الرضا').data.length, 2);
-  assert.strictEqual(env.sheet('الرضا').data[1].slice(4, 9).join(), '5,4,5,3,5');
+  assert.strictEqual(env.sheet('الرضا').data[1].slice(4, 15).join(), SURVEY.join());
+  assert.strictEqual(env.sheet('الرضا').data[1][15], 'ممتازة');
+  assert.ok(env.mails.some(m => m.to === 'sara@x.com' && /استلمنا/.test(m.subject) && /يومين إلى ثلاثة أيام عمل/.test(m.htmlBody)));
   const ta = login(env, ADMIN);
   const list = env.api('adminList', { token: ta }).data;
   assert.strictEqual(list.length, 1);
@@ -98,7 +103,13 @@ test('تحقق المدخلات: اسم عربي، استبيان ناقص، ب�
   const env = fresh();
   const t = login(env, 's@x.com');
   assert.match(env.api('submitRequest', { token: t, data: form({ nameEn: 'سارة' }) }).error, /الإنجليزية/);
-  assert.match(env.api('submitRequest', { token: t, data: form({ survey: [5, 5, 0, 5, 5] }) }).error, /الاستبيان|استبيان/);
+  assert.match(env.api('submitRequest', { token: t, data: form({ survey: [5, 5, 0, 5, 5, 5, 5, 5, 5, 5, 5] }) }).error, /استبيان/);
+  assert.match(env.api('submitRequest', { token: t, data: form({ survey: [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 11] }) }).error, /استبيان/);
+  assert.match(env.api('submitRequest', { token: t, data: form({ survey: [6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 10] }) }).error, /استبيان/);
+  assert.match(env.api('submitRequest', { token: t, data: form({ comment: '  ' }) }).error, /ملاحظاتك/);
+  assert.match(env.api('submitRequest', { token: t, data: form({ nameAr: 'Sara' }) }).error, /بالعربية/);
+  assert.match(env.api('submitRequest', { token: t, data: form({ platformEmail: 'x' }) }).error, /المنصة/);
+  assert.match(env.api('submitRequest', { token: t, data: form({ city: '' }) }).error, /المدينة/);
   assert.match(env.api('submitRequest', { token: t, data: form({ proof: null }) }).error, /صورة/);
   assert.match(env.api('submitRequest', { token: t, data: form({ courseId: 'old-course' }) }).error, /الدورة/);
   assert.match(env.api('submitRequest', { token: t, data: form({ proof: { type: 'text/html', data: PNG } }) }).error, /PNG/);
@@ -108,7 +119,7 @@ test('معادلة في التعليق تُخزّن نصاً', () => {
   const env = fresh();
   const t = login(env, 's@x.com');
   env.api('submitRequest', { token: t, data: form({ comment: '=IMPORTXML("http://x")', phone: '+966500' }) });
-  assert.strictEqual(env.sheet('الرضا').data[1][9], "'=IMPORTXML(\"http://x\")");
+  assert.strictEqual(env.sheet('الرضا').data[1][15], "'=IMPORTXML(\"http://x\")");
 });
 
 test('طلب مكرر لنفس الدورة يُرفض برسالة واضحة', () => {
@@ -228,6 +239,21 @@ test('قائمة المشرفين ورابط الموقع من Script Properties
   const t = login(env, 's@x.com');
   const id = env.api('submitRequest', { token: t, data: form() }).data;
   assert.strictEqual(env.api('adminReserveNumber', { token: tb, id }).data.verifyUrl.split('?')[0], 'https://wida3tk.github.io/certi/');
+});
+
+test('شرط 10 أيام: من 1 إلى 10 مسموح، ومن 1 إلى 9 ممنوع', () => {
+  const env = fresh();
+  assert.strictEqual(env.ctx.daysInclusive_('2026-09-01', '2026-09-10'), 10);
+  assert.strictEqual(env.ctx.daysInclusive_('2026-02-25', '2026-03-06'), 10);
+  const t = login(env, 's@x.com');
+  const id = env.api('submitRequest', { token: t, data: form({ courseId: 'specialist' }) }).data;
+  const ta = login(env, ADMIN);
+  assert.strictEqual(env.api('adminGet', { token: ta, id }).data.minDays, 10);
+  const num = env.api('adminReserveNumber', { token: ta, id }).data;
+  const r9 = env.api('adminApprove', { token: ta, data: { id, certNo: num.certNo, pdf: PDF, start: '2026-09-01', end: '2026-09-09' } });
+  assert.strictEqual(r9.ok, false); assert.match(r9.error, /10 أيام/);
+  const r10 = env.api('adminApprove', { token: ta, data: { id, certNo: num.certNo, pdf: PDF, start: '2026-09-01', end: '2026-09-10' } });
+  assert.strictEqual(r10.ok, true, r10.error);
 });
 
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));
