@@ -24,7 +24,7 @@ const DEFAULTS = {
   // احتياطي لقراءة قائمة الدورات إن لم يعمل النطاق بعد (GitHub Pages)
   PAGES_URL: 'https://wida3tk.github.io/Certi/',
   // رابط الموقع الذي تفتحه الروابط في الإيميلات («شهاداتي»، تعيين كلمة المرور). يصير SITE_URL بعد ربط النطاق
-  APP_URL: 'https://wida3tk.github.io/Certi/',
+  APP_URL: 'https://certificates.sulukera.com/',
   // نظام العمليات: غير مربوط حالياً بقرار مريم (2026-11-24). المرحلة الثانية: يُضاف مصدر البيانات هنا فقط
 };
 
