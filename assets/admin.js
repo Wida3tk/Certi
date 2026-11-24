@@ -35,13 +35,21 @@ $('bCloseD').onclick = () => { $('aDetail').classList.add('hide'); $('aListCard'
 
 function setSrc(id, text, none) { $(id).textContent = text; $(id).classList.toggle('none', !!none); }
 
+/** بعد أي إجراء: تحديث القائمة من الخادم ثم إعادة فتح الطلب بحالته الجديدة */
+async function refreshAndOpen(id) {
+  try { ALL = await api('adminList', { token: SESSION.token }); } catch (e) { }
+  await openReq(id);
+}
 async function openReq(id) {
   $('aListCard').classList.add('hide'); $('aTabs').classList.add('hide'); $('aDetail').classList.remove('hide');
   $('dTitle').textContent = 'جارٍ التحميل...'; $('prev').innerHTML = ''; $('dActs').innerHTML = '';
   $('dRej').classList.add('hide'); $('dReason').value = ''; $('dInfo').innerHTML = '';
   clearMsg($('dMsg')); GEN = null; CUR = null;
   try {
-    const r = CUR = await api('adminGet', { token: SESSION.token, id: id });
+    // الطلب موجود في القائمة المحمّلة: يُفتح فوراً بلا رحلة للخادم
+    const r = CUR = Object.assign({}, ALL.find(x => x.id === id) || await api('adminGet', { token: SESSION.token, id: id }));
+    // تحميل القالب والخطوط مسبقاً ليكون «توليد ومعاينة» أسرع
+    if (r.status === ST.PENDING || r.status === ST.ISSUED) loadTemplate(r.courseId).then(t => loadTemplateFonts(t.layout.fields || [])).catch(() => { });
     $('dTitle').innerHTML = esc(r.nameAr || r.nameEn) + ' ' + pill(r.status);
     $('dNameEn').value = r.nameEn || ''; $('dNameAr').value = r.nameAr || '';
     // التواريخ: البدء يُدخل يدوياً بعد التحقق من المنصة، والانتهاء افتراضياً تاريخ تقديم الطلب
@@ -80,7 +88,7 @@ function renderActs() {
   if ($('bRevoke')) $('bRevoke').onclick = async () => {
     const why = prompt('سبب إلغاء الشهادة ' + CUR.certNo + ' (للسجل). بعد الإلغاء تظهر صفحة التحقق «ملغاة»:');
     if (why === null) return;
-    try { const t = await api('adminRevoke', { token: SESSION.token, id: CUR.id, reason: why }); await openReq(CUR.id); msg($('dMsg'), t, 'ok'); }
+    try { const t = await api('adminRevoke', { token: SESSION.token, id: CUR.id, reason: why }); await refreshAndOpen(CUR.id); msg($('dMsg'), t, 'ok'); }
     catch (e) { msg($('dMsg'), e.message, 'err'); }
   };
 }
@@ -101,7 +109,7 @@ function checkDays() {
 }));
 $('bRejGo').onclick = async () => {
   const b = $('bRejGo'); busy(b, true);
-  try { const t = await api('adminReject', { token: SESSION.token, id: CUR.id, reason: $('dReason').value }); await openReq(CUR.id); msg($('dMsg'), t, 'ok'); }
+  try { const t = await api('adminReject', { token: SESSION.token, id: CUR.id, reason: $('dReason').value }); await refreshAndOpen(CUR.id); msg($('dMsg'), t, 'ok'); }
   catch (e) { msg($('dMsg'), e.message, 'err'); }
   busy(b, false);
 };
@@ -136,7 +144,7 @@ async function approve(test) {
     const r = await api('adminApprove', { token: SESSION.token, data: { id: CUR.id, certNo: GEN.certNo, pdf: GEN.pdf, test: test,
       resend: CUR.status === ST.ISSUED, start: GEN.start, end: GEN.end, nameEn: GEN.nameEn } });
     msg($('dMsg'), r, 'ok');
-    if (!test) { await openReq(CUR.id); msg($('dMsg'), r, 'ok'); } else renderActs();
+    if (!test) { await refreshAndOpen(CUR.id); msg($('dMsg'), r, 'ok'); } else renderActs();
   } catch (e) { msg($('dMsg'), e.message, 'err'); renderActs(); }
 }
 

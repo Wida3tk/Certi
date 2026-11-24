@@ -100,7 +100,7 @@ test('غير المشرف لا يستدعي أي action إداري', () => {
   const t = login(env, 'student@x.com');
   const r0 = env.api('submitRequest', { token: t, data: form() });
   for (const a of ['adminList', 'adminGet', 'adminReserveNumber', 'adminApprove', 'adminReject', 'adminRevoke']) {
-    const r = env.api(a, { token: t, id: r0.data, data: { id: r0.data } });
+    const r = env.api(a, { token: t, id: r0.data.id, data: { id: r0.data.id } });
     assert.strictEqual(r.ok, false, a); assert.match(r.error, /غير مصرّح/, a);
   }
   // حتى رمز دخول المشرف كمتدرب (OTP) لا يفتح أي إجراء إداري
@@ -150,7 +150,7 @@ test('طلب مكرر لنفس الدورة يُرفض برسالة واضحة',
 test('الإرسال التجريبي يصل للمراجِعة فقط ولا يغيّر الحالة', () => {
   const env = fresh();
   const t = login(env, 's@x.com');
-  const id = env.api('submitRequest', { token: t, data: form() }).data;
+  const id = env.api('submitRequest', { token: t, data: form() }).data.id;
   const ta = adminLogin(env, ADMIN);
   const num = env.api('adminReserveNumber', { token: ta, id }).data;
   env.mails.length = 0;
@@ -166,7 +166,7 @@ test('الإرسال التجريبي يصل للمراجِعة فقط ولا ي
 test('الاعتماد ← Drive + إيميل بالمرفق + صادرة + شهاداتي + تحميل + تحقق + إلغاء', () => {
   const env = fresh();
   const t = login(env, 's@x.com');
-  const id = env.api('submitRequest', { token: t, data: form() }).data;
+  const id = env.api('submitRequest', { token: t, data: form() }).data.id;
   const ta = adminLogin(env, ADMIN);
   const num = env.api('adminReserveNumber', { token: ta, id }).data;
   assert.match(num.certNo, /^SLK-\d{4}-000001$/);
@@ -210,7 +210,7 @@ test('الاعتماد ← Drive + إيميل بالمرفق + صادرة + شه
 test('الرفض يرسل السبب للمتدرب ويسمح بطلب جديد', () => {
   const env = fresh();
   const t = login(env, 's@x.com');
-  const id = env.api('submitRequest', { token: t, data: form() }).data;
+  const id = env.api('submitRequest', { token: t, data: form() }).data.id;
   const ta = adminLogin(env, ADMIN);
   assert.match(env.api('adminReject', { token: ta, id, reason: '' }).error, /سبب/);
   env.mails.length = 0;
@@ -228,7 +228,7 @@ test('الأرقام التسلسلية لا تتكرر', () => {
   const nums = new Set();
   for (let i = 0; i < 5; i++) {
     const t = login(env, 's' + i + '@x.com');
-    const id = env.api('submitRequest', { token: t, data: form() }).data;
+    const id = env.api('submitRequest', { token: t, data: form() }).data.id;
     nums.add(env.api('adminReserveNumber', { token: ta, id }).data.certNo);
     // الحجز مرة ثانية يرجع نفس الرقم
     assert.ok(nums.has(env.api('adminReserveNumber', { token: ta, id }).data.certNo));
@@ -245,7 +245,7 @@ test('قائمة المشرفين ورابط الموقع من Script Properties
   assert.ok(![...env.cache.keys()].some(k => k.startsWith('reset:')), 'removed admin gets no reset link');
   const tb = adminLogin(env, 'boss@x.com');
   const t = login(env, 's@x.com');
-  const id = env.api('submitRequest', { token: t, data: form() }).data;
+  const id = env.api('submitRequest', { token: t, data: form() }).data.id;
   assert.strictEqual(env.api('adminReserveNumber', { token: tb, id }).data.verifyUrl.split('?')[0], 'https://wida3tk.github.io/certi/');
 });
 
@@ -254,7 +254,7 @@ test('شرط 10 أيام: من 1 إلى 10 مسموح، ومن 1 إلى 9 ممن
   assert.strictEqual(env.ctx.daysInclusive_('2026-09-01', '2026-09-10'), 10);
   assert.strictEqual(env.ctx.daysInclusive_('2026-02-25', '2026-03-06'), 10);
   const t = login(env, 's@x.com');
-  const id = env.api('submitRequest', { token: t, data: form({ courseId: 'specialist' }) }).data;
+  const id = env.api('submitRequest', { token: t, data: form({ courseId: 'specialist' }) }).data.id;
   const ta = adminLogin(env, ADMIN);
   assert.strictEqual(env.api('adminGet', { token: ta, id }).data.minDays, 10);
   const num = env.api('adminReserveNumber', { token: ta, id }).data;
@@ -309,6 +309,17 @@ test('دخول الإدارة بكلمة المرور: تعيين برابط، �
   // جلسة المتدرب لا تُقبل للإدارة، وجلسة الإدارة لا تُقبل كمتدرب
   const ts = login(env, 's@x.com');
   assert.strictEqual(env.api('adminList', { token: ts }).ok, false);
+});
+
+test('رحلات أقل: الدخول يرجع بيانات البوابة، والتقديم يرجع القائمة، وقائمة الإدارة فيها التفاصيل', () => {
+  const env = fresh();
+  env.api('requestCode', { email: 'q@x.com' });
+  const v = env.api('verifyCode', { email: 'q@x.com', code: env.cache.get('otp:q@x.com') }).data;
+  assert.strictEqual(v.data.survey.length, 11); assert.ok(v.data.courses.length);
+  const r = env.api('submitRequest', { token: v.token, data: form() }).data;
+  assert.strictEqual(r.requests[0].id, r.id); assert.strictEqual(r.requests[0].status, 'بانتظار المراجعة');
+  const l = env.api('adminList', { token: adminLogin(env, ADMIN) }).data[0];
+  assert.strictEqual(l.phone, '0501234567'); assert.strictEqual(l.courseId, 'persuasion-influence'); assert.strictEqual(l.platformEmail, 'sara.platform@x.com');
 });
 
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));

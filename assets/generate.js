@@ -20,15 +20,21 @@ async function loadTemplateFonts(fields) {
 }
 
 const _tplCache = {};
-async function loadTemplate(courseId) {
-  if (!/^[a-z0-9-]+$/.test(courseId)) throw new Error('معرّف دورة غير صالح.');
+/** يُحمَّل القالب مرة واحدة ويُشارك بين التحميل المسبق والتوليد (يُحفظ الوعد نفسه) */
+function loadTemplate(courseId) {
+  if (!/^[a-z0-9-]+$/.test(courseId)) return Promise.reject(new Error('معرّف دورة غير صالح.'));
   if (_tplCache[courseId]) return _tplCache[courseId];
   const base = 'templates/' + courseId + '/';
-  const res = await fetch(base + 'layout.json', { cache: 'no-cache' });
-  if (!res.ok) throw new Error('لا يوجد قالب لهذه الدورة في templates/' + courseId);
-  const layout = await res.json();
-  const bg = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('تعذّر تحميل خلفية القالب.')); i.src = base + 'background.jpg'; });
-  return (_tplCache[courseId] = { layout, bg });
+  const p = (async () => {
+    const res = await fetch(base + 'layout.json', { cache: 'no-cache' });
+    if (!res.ok) throw new Error('لا يوجد قالب لهذه الدورة في templates/' + courseId);
+    const layout = await res.json();
+    const bg = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('تعذّر تحميل خلفية القالب.')); i.src = base + 'background.jpg'; });
+    return { layout, bg };
+  })();
+  _tplCache[courseId] = p;
+  p.catch(() => { delete _tplCache[courseId]; }); // عند الفشل يُعاد المحاولة لاحقاً
+  return p;
 }
 
 /** يرجع { canvas, pdfBase64 } */

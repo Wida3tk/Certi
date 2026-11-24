@@ -8,7 +8,7 @@ const store = {
 };
 function msg(el, t, kind) { el.textContent = t; el.className = 'msg ' + (kind || 'info'); }
 function clearMsg(el) { el.textContent = ''; el.className = 'msg'; }
-function busy(btn, on) { if (btn) btn.disabled = on; }
+function busy(btn, on) { if (btn) { btn.disabled = on; btn.classList.toggle('busy', !!on); } }
 const ST = { PENDING: 'بانتظار المراجعة', ISSUED: 'صادرة', REJECTED: 'مرفوضة', REVOKED: 'ملغاة' };
 function pill(s) {
   const c = s === ST.ISSUED ? 'p-ok' : s === ST.REJECTED ? 'p-no' : s === ST.REVOKED ? 'p-rev' : 'p-wait';
@@ -83,7 +83,7 @@ function setupLogin(opts) {
       }
       session.token = r.token; session.email = r.email;
       store.set(TOKEN_KEY, r.token); store.set(EMAIL_KEY, r.email);
-      clearMsg($('lMsg')); showWho(); opts.onLogin(session);
+      clearMsg($('lMsg')); showWho(); opts.onLogin(session, r.data);
     } catch (e) { msg($('lMsg'), e.message, 'err'); }
     busy(b, false);
   };

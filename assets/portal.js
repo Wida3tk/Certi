@@ -42,9 +42,9 @@ document.querySelectorAll('#vPortal .tabs button').forEach(b => b.onclick = () =
   ['pNew', 'pMine'].forEach(id => $(id).classList.toggle('hide', id !== b.dataset.t));
 });
 
-async function loadPortal() {
+async function loadPortal(preloaded) {
   try {
-    const d = await api('getMyData', { token: SESSION.token });
+    const d = preloaded || await api('getMyData', { token: SESSION.token });
     SURVEY = d.survey; ANS = SURVEY.map(() => 0); COURSES = d.courses;
     document.querySelectorAll('.issueDays').forEach(e => e.textContent = d.issueDays);
     $('commentLabel').textContent = d.surveyComment;
@@ -108,10 +108,11 @@ $('bSubmit').onclick = async () => {
     if (!confirm('سيُطبع اسمك على الشهادة هكذا:\n\n' + nameEn + '\n\nهل الكتابة صحيحة؟')) return;
     busy(b, true); msg($('pMsg'), 'جارٍ إرسال الطلب...', 'info');
     const courseId = $('fCourse').value;
-    let id;
+    let id, requests = null;
     try {
-      id = await api('submitRequest', { token: SESSION.token, data: { courseId: courseId, nameEn: nameEn, nameAr: nameAr,
+      const res = await api('submitRequest', { token: SESSION.token, data: { courseId: courseId, nameEn: nameEn, nameAr: nameAr,
         platformEmail: v('fPlatformEmail'), city: v('fCity'), phone: phone, survey: ANS, comment: $('fComment').value } });
+      id = res.id; requests = res.requests;
     } catch (err) {
       // انقطع الاتصال بعد وصول الطلب؟ نتحقق من «شهاداتي» قبل إظهار خطأ
       if (!/الاتصال|رد غير متوقع/.test(err.message)) throw err;
@@ -119,14 +120,14 @@ $('bSubmit').onclick = async () => {
       const name = (COURSES.filter(c => c.id === courseId)[0] || {}).nameAr;
       const got = d && d.requests.filter(r => r.status === ST.PENDING && r.course === name)[0];
       if (!got) throw err;
-      id = got.id;
+      id = got.id; requests = d.requests;
     }
     msg($('pMsg'), 'وصل طلبك (رقم ' + id + '). تُصدر الشهادة خلال ' + document.querySelector('.issueDays').textContent +
       ' وتصلك على بريدك، وتجدها أيضاً في «شهاداتي».', 'ok');
     ['fNameEn', 'fNameAr', 'fPlatformEmail', 'fCity', 'fPhone', 'fComment'].forEach(i => $(i).value = ''); $('fCourse').value = ''; $('fCourse').onchange();
     ANS = ANS.map(() => 0);
     document.querySelectorAll('.rate button').forEach(x => x.classList.remove('on'));
-    const d = await api('getMyData', { token: SESSION.token }); renderMine(d.requests);
+    if (requests) renderMine(requests);
   } catch (e) { msg($('pMsg'), e.message, 'err'); }
   busy(b, false);
 };
@@ -136,7 +137,7 @@ if (params.get('v')) {
   showVerify(params.get('v'));
 } else {
   const auth = setupLogin({
-    onLogin: s => { SESSION = s; showPortal(true); loadPortal(); },
+    onLogin: (s, data) => { SESSION = s; showPortal(true); loadPortal(data); },
     onLogout: () => { SESSION = null; showPortal(false); },
   });
   if (auth.session.token) { SESSION = auth.session; showPortal(true); loadPortal(); } else showPortal(false);

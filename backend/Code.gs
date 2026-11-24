@@ -135,8 +135,11 @@ function prop_(k) {
   if (!v) throw new Error('النظام غير مُعدّ بعد. شغّلي setup() من المحرر.');
   return v;
 }
-function ss_() { return SpreadsheetApp.openById(prop_('SHEET_ID')); }
-function sheet_(name) { return ss_().getSheetByName(name); }
+// ذاكرة داخل الطلب الواحد: الشيت يُفتح مرة، وكل تبويب يُقرأ مرة (تُمسح عند أي كتابة)
+const MEMO_ = { ss: null, sheets: {}, rows: {}, head: {} };
+function ss_() { return MEMO_.ss || (MEMO_.ss = SpreadsheetApp.openById(prop_('SHEET_ID'))); }
+function sheet_(name) { return MEMO_.sheets[name] || (MEMO_.sheets[name] = ss_().getSheetByName(name)); }
+function dirty_(name) { delete MEMO_.rows[name]; delete MEMO_.head[name]; }
 function tz_() { return Session.getScriptTimeZone(); }
 function now_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm'); }
 function cleanEmail_(e) { return String(e || '').trim().toLowerCase(); }
@@ -158,19 +161,22 @@ function safe_(s, max) {
 }
 
 function rows_(name) {
+  if (MEMO_.rows[name]) return MEMO_.rows[name];
   const sh = sheet_(name);
   const values = sh.getDataRange().getValues();
   const head = values.shift();
-  return values.map((r, i) => {
+  MEMO_.head[name] = head;
+  return (MEMO_.rows[name] = values.map((r, i) => {
     const o = { _row: i + 2 };
     head.forEach((h, j) => o[h] = r[j] instanceof Date
       ? Utilities.formatDate(r[j], tz_(), 'yyyy-MM-dd') : r[j]);
     return o;
-  });
+  }));
 }
 function setCells_(name, row, obj) {
   const sh = sheet_(name);
-  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  const head = MEMO_.head[name] || sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  dirty_(name);
   Object.keys(obj).forEach(k => {
     const c = head.indexOf(k);
     if (c >= 0) sh.getRange(row, c + 1).setValue(obj[k]);
@@ -178,6 +184,7 @@ function setCells_(name, row, obj) {
 }
 function appendObj_(name, headers, obj) {
   const sh = sheet_(name);
+  dirty_(name);
   let head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
   const missing = headers.filter(h => head.indexOf(h) < 0);
   if (missing.length) {
@@ -269,7 +276,9 @@ function verifyCode(email, code) {
   cache.remove(k); cache.remove('try:' + email); cache.remove('cnt:' + email);
   const token = Utilities.getUuid() + Utilities.getUuid();
   cache.put('tok:' + token, email, CONFIG.SESSION_HOURS * 3600);
-  return { token: token, email: email };
+  let data = null;
+  try { data = getMyData(token); } catch (e) { }
+  return { token: token, email: email, data: data };
 }
 
 function who_(token) {
@@ -435,7 +444,7 @@ function submitRequest(token, d) {
           '<p style="color:#666;font-size:13px">إذا كان في الاسم خطأ، يُرجى الرد على هذه الرسالة قبل إصدار الشهادة؛ فتعديل الاسم بعد الإصدار يترتب عليه رسوم إضافية.</p>'),
       });
     } catch (e) { console.error('confirm mail: ' + e); }
-    return id;
+    return { id: id, requests: getMyData(token).requests };
   } finally { lock.releaseLock(); }
 }
 
@@ -462,19 +471,7 @@ function verifyCert(certNo) {
 }
 
 /* ===================== لوحة المراجعة ===================== */
-function adminList(token) {
-  admin_(token);
-  return rows_(TABS.REQ).map(r => ({
-    id: r['رقم الطلب'], date: String(r['تاريخ الطلب']).slice(0, 10),
-    nameEn: r['الاسم بالإنجليزي'], nameAr: r['الاسم بالعربي'], email: r['البريد'], course: r['اسم الدورة'], type: r['نوع البرنامج'],
-    status: r['الحالة'], certNo: r['رقم الشهادة'],
-    issued: r['تاريخ الإصدار'],
-  })).reverse();
-}
-
-function adminGet(token, id) {
-  admin_(token);
-  const r = findReq_(id);
+function reqView_(r) {
   const c = courseById_(r['معرّف الدورة']);
   return {
     id: r['رقم الطلب'], nameEn: r['الاسم بالإنجليزي'], nameAr: r['الاسم بالعربي'], email: r['البريد'],
@@ -485,6 +482,15 @@ function adminGet(token, id) {
     start: r['تاريخ البدء'], end: r['تاريخ الإتمام'], certNo: r['رقم الشهادة'], note: r['ملاحظات'],
     approvedBy: r['اعتمدها'], issued: r['تاريخ الإصدار'],
   };
+}
+function adminList(token) {
+  admin_(token);
+  return rows_(TABS.REQ).map(reqView_).reverse();
+}
+
+function adminGet(token, id) {
+  admin_(token);
+  return reqView_(findReq_(id));
 }
 
 /** رقم الشهادة يُحجز قبل التوليد حتى يُطبع على الشهادة ورمز QR — LockService يمنع التكرار */
@@ -657,7 +663,10 @@ function ensureSetup_() {
   finally { lock.releaseLock(); }
 }
 
+function memoReset_() { MEMO_.ss = null; MEMO_.sheets = {}; MEMO_.rows = {}; MEMO_.head = {}; }
+
 function doPost(e) {
+  memoReset_();
   try { ensureSetup_(); } catch (err) { return json_({ ok: false, error: 'تعذّر تجهيز النظام: ' + err.message }); }
   let body;
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); }
@@ -674,6 +683,7 @@ function doPost(e) {
 
 /** GET يرجع حالة فقط (للتأكد أن النشر يعمل) */
 function doGet() {
+  memoReset_();
   ensureSetup_();
   return json_({ ok: true, service: 'sulukera-certificates', ready: true, time: new Date().toISOString() });
 }
