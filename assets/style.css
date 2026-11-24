@@ -108,6 +108,11 @@ button.busy::before { content: ''; position: absolute; inset-inline-start: 14px;
 .pill { display: inline-block; padding: 3px 12px; border-radius: var(--pill); font-size: 13px; font-weight: 600; white-space: nowrap; }
 .p-wait { background: var(--warn-bg); color: var(--warn); } .p-ok { background: var(--ok-bg); color: var(--ok); }
 .p-no { background: var(--err-bg); color: var(--err); } .p-rev { background: #F2F4F7; color: #475467; }
+.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.toolbar input { flex: 1 1 260px; min-width: 0; height: 46px; }
+.toolbar-btns { display: flex; gap: 8px; flex: none; }
+.toolbar-btns button { white-space: nowrap; height: 46px; padding-block: 0; }
+@media (max-width: 560px) { .toolbar-btns { width: 100%; } .toolbar-btns button { flex: 1; } }
 .tablewrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: right; padding: 12px 8px; border-bottom: 1px solid var(--line); font-size: 15px; vertical-align: middle; }
