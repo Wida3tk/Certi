@@ -121,7 +121,7 @@
 3. **مراجعة القوالب** في صفحة المراجعة (الرابط في `templates/_staging/README.md`) ← ثم تفعيل المعتمد.
 4. ✅ **GoDaddy (2026-11-24):** سجل CNAME `certificates` ← `wida3tk.github.io` (مؤكد عبر dns.google)، وأُعيد ملف `CNAME` للجذر.
    ✅ HTTPS يعمل على النطاق، وصفحة التحقق اختُبرت حية (SLK-2026-000001 «شهادة صحيحة»)، و`APP_URL` صار `https://certificates.sulukera.com/`.
-   باقٍ: مريم تضع ✓ على **Enforce HTTPS** في إعدادات Pages (تحويل http إلى https).
+   ✅ Enforce HTTPS مفعّل (2026-11-24). الموقع النهائي: https://certificates.sulukera.com و/admin.html.
    قائمة الدورات لها مصدر احتياطي ثالث `raw.githubusercontent.com/Wida3tk/Certi/main/` فلا تتعطل أثناء انتقال النطاق.
 
 **الخطوات البرمجية التالية بعد ذلك:** اختيار نسخة القالب (المدرب) في لوحة المراجعة ← البرامج الطويلة + صفحة المحاسب + المخالصة والتوقيع الإلكتروني
