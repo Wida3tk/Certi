@@ -370,9 +370,10 @@ test('طلب عدة شهادات مرة واحدة: طلب مستقل لكل د�
 });
 
 test('استيراد ردود Google Form من تاريخ معيّن: معاينة بلا كتابة، استيراد بلا تكرار، بلا إيميلات', () => {
-  const H = ['طابع زمني', 'الاسم الثلاثي باللغة العربية:', 'الاسم الثلاثي باللغة الإنجليزية:', 'البريد الالكتروني:', 'البريد الإلكتروني المستخدم في المنصة:',
-    'رقم الجوال:', 'المدينة:', 'الدورة :', 'كان محتوى الدورة منظماً ومتسلسلاً بصورة مناسبة', 'هل لديك أي ملاحظات أو مقترحات إضافية؟'];
-  const row = (d, email, course) => [d, 'سارة', 'Sara Ali', email, 'p@x.com', '0501234567', 'جدة', course, 5, 'شكراً'];
+  // نفس عناوين الشيت الحقيقي «البيانات المطلوبة لاستكمال إصدار الشهادة (الردود)»
+  const H = ['طابع زمني', 'الاسم الثلاثي باللغة العربية :', 'الاسم الثلاثي باللغة الإنجليزية : ', 'البريد الإلكتروني لإرسال الشهادة :', 'البرنامج التدريبي :',
+    'رقم التواصل :', 'الحالة', 'أقر بأن المعلومات المدخلة صحيحة، وأن البيانات تخضع لتدقيق فريق منصة رشد', 'العمود 1'];
+  const row = (d, email, course, st) => [d, 'سارة', 'Sara Ali', email, course, '0501234567', st || '', 'أقر', ''];
   const FORM = '1EQeszwFORMxxxxxxxxxxxxxxxxxxxxx';
   const env = createEnv({ extraSheets: { [FORM]: { 'ردود النموذج 1': [H,
     row(new Date(2026, 10, 20, 10), 'old@x.com', 'فن الإقناع والتأثير'),
@@ -380,6 +381,7 @@ test('استيراد ردود Google Form من تاريخ معيّن: معاين
     row(new Date(2026, 10, 23, 9), 'b@x.com', 'إعداد الأخصائي'),
     row(new Date(2026, 10, 23, 11), 'c@x.com', 'دورة غير معروفة'),
     row(new Date(2026, 10, 24, 8), 'd@x.com', 'قديمة'),
+    row(new Date(2026, 10, 24, 9), 'e@x.com', 'فن الإقناع والتأثير', 'تم الإرسال'),
   ] } } });
   // التاريخ داخل سياق vm
   const VDate = require('vm').runInContext('Date', env.ctx);
@@ -389,7 +391,7 @@ test('استيراد ردود Google Form من تاريخ معيّن: معاين
   const url = 'https://docs.google.com/spreadsheets/d/' + FORM + '/edit#gid=1';
   const p = env.api('adminImportPreview', { token: ta, url, from: '2026-11-22' });
   assert.strictEqual(p.ok, true, p.error);
-  assert.strictEqual(p.data.total, 4, 'from date filter');
+  assert.strictEqual(p.data.total, 5, 'from date filter'); assert.strictEqual(p.data.handled, 1);
   assert.strictEqual(p.data.ready, 2); assert.strictEqual(p.data.unmatched, 2);
   assert.ok(p.data.courses.some(c => c.name === 'قديمة' && c.inactive));
   assert.strictEqual(env.sheet('الطلبات').data.length, 1, 'preview writes nothing');

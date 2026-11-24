@@ -651,7 +651,8 @@ function readForm_(url, fromDate) {
     nameEn: find(/الاسم.*(الإنجليزي|الانجليزي|english)/i),
     platform: find(/البريد.*المنصة|المنصة.*البريد/),
     email: find(/البريد|e-?mail/i, /المنصة/),
-    phone: find(/الجوال|الهاتف|phone/i),
+    phone: find(/الجوال|الهاتف|التواصل|phone/i),
+    status: find(/^الحالة$/),
     city: find(/المدينة|city/i),
     course: head.reduce((best, h, i) => /الدورة|البرنامج/.test(h) && (best < 0 || h.length < head[best].length) ? i : best, -1),
   };
@@ -674,6 +675,7 @@ function readForm_(url, fromDate) {
         phone: col.phone >= 0 ? String(r[col.phone] || '').replace(/[\s\-()]/g, '') : '', city: col.city >= 0 ? clean_(r[col.city]) : '',
         courseName: courseName, course: c && c.active ? c : null, inactive: !!(c && !c.active),
         survey: sv.map(k => k >= 0 ? Number(r[k]) || '' : ''), comment: cm >= 0 ? String(r[cm] || '') : '',
+        handled: col.status >= 0 ? String(r[col.status] || '').trim() : '',
       };
     }).filter(x => x.time instanceof Date && !isNaN(x.time) && x.time >= from && x.email),
   };
@@ -690,9 +692,11 @@ function adminImportPreview(token, url, fromDate) {
     names[k] = names[k] || { name: k, count: 0, courseId: x.course ? x.course.id : '', inactive: x.inactive };
     names[k].count++;
   });
+  const handled = f.rows.filter(x => x.handled);
+  f.rows = f.rows.filter(x => !x.handled);
   const ready = f.rows.filter(x => x.course && !existing[importKey_(x.email, x.course.id, x.time)]);
   return {
-    tab: f.tab, total: f.rows.length, ready: ready.length,
+    tab: f.tab, total: f.rows.length + handled.length, handled: handled.length, ready: ready.length,
     already: f.rows.filter(x => x.course && existing[importKey_(x.email, x.course.id, x.time)]).length,
     unmatched: f.rows.filter(x => !x.course).length,
     courses: Object.keys(names).map(k => names[k]).sort((a, b) => b.count - a.count),
@@ -708,7 +712,7 @@ function adminImport(token, url, fromDate) {
     rows_(TABS.REQ).forEach(r => { if (r['مفتاح الاستيراد']) existing[r['مفتاح الاستيراد']] = 1; });
     let n = 0;
     f.rows.forEach(x => {
-      if (!x.course) return;
+      if (!x.course || x.handled) return;
       const key = importKey_(x.email, x.course.id, x.time);
       if (existing[key]) return;
       existing[key] = 1;

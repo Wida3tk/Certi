@@ -18,7 +18,7 @@ $('bImpPreview').onclick = async () => {
     const p = await api('adminImportPreview', { token: SESSION.token, url: $('impUrl').value.trim(), from: $('impFrom').value });
     $('impOut').innerHTML =
       '<p>التبويب: <b>' + esc(p.tab) + '</b> — الردود من التاريخ: <b>' + p.total + '</b> · جاهزة للاستيراد: <b>' + p.ready + '</b>' +
-      (p.already ? ' · سبق استيرادها: ' + p.already : '') + (p.unmatched ? ' · <span style="color:var(--warn)">دورات غير مفعّلة أو غير معروفة: ' + p.unmatched + '</span>' : '') + '</p>' +
+      (p.handled ? ' · عليها «الحالة» في الشيت (تُتخطّى): ' + p.handled : '') + (p.already ? ' · سبق استيرادها: ' + p.already : '') + (p.unmatched ? ' · <span style="color:var(--warn)">دورات غير مفعّلة أو غير معروفة: ' + p.unmatched + '</span>' : '') + '</p>' +
       '<div class="tablewrap"><table><tr><th>اسم الدورة في الفورم</th><th>الردود</th><th>الحالة في النظام</th></tr>' +
       p.courses.map(c => '<tr><td>' + esc(c.name) + '</td><td>' + c.count + '</td><td>' +
         (c.courseId ? '<span class="pill p-ok">مفعّلة</span>' : c.inactive ? '<span class="pill p-wait">موجودة وغير مفعّلة</span>' : '<span class="pill p-no">غير معروفة</span>') + '</td></tr>').join('') +
