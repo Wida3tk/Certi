@@ -66,7 +66,8 @@
 - **الاختبارات:** `npm test` (الخلفية على محاكاة Apps Script في `tests/gas-mock.js` + مطابقة الرسم للعينة)، و`npm run test:e2e` (المسار كاملاً في Chromium عبر Playwright).
 - **الخلفية تعمل بحساب care@sulukera.com (قرار مريم: كل الإيميلات تخرج من care@):** مشروع Apps Script `1--yJaQSCQjXrvmTnGyYjt0SrTbp0yczBxb3rqljL1cMfvU60FCYQQA3j`،
   النشر الثابت `AKfycbyMiZgi2sRlne0uFF0YXre7GymAwLSyESqFUyDiVyY0e590qbUFkP98n_I0oxa5tlc`. سجّل `clasp login` بحساب care@ (لا maryam@).
-  المشروع القديم على maryam@ (`1ks2Mrz4...`, نشر `AKfycbwHZZ...`) مهجور — يُوقف نشره بعد تأكد عمل care@.
+  ✅ مفوّض ومختبر للزوار المجهولين (2026-11-24). المشروع القديم على maryam@ (`1ks2Mrz4...`): أُلغي نشره `AKfycbwHZZ...` (404).
+  تنبيه: صفحات Apps Script تفشل («unable to open the file») إذا كان المتصفح مسجّلاً بأكثر من حساب — استخدم نافذة خاصة بحساب واحد.
   البرامج الطويلة: «إيميل مخصص» = نص إيميل خاص بالبرنامج (لا مرسل مختلف) — بانتظار نصوص مريم.
 - (تاريخي) **الخلفية منشورة أولاً (2026-11-24):** مشروع Apps Script `1ks2Mrz4-NdF1Htsooupd3XHJzKiW5M5_CBIXgY4R1v8Mez6uB5bMTWcv` بحساب maryam@sulukera.com.
   النشر الثابت `AKfycbwHZZtEpJylaLwP8Ta1QSlIGxe_tjZs4AAGV-do5MPcjHqAfjgUN0Or6asoInbYJzCI` (رابطه في `assets/config.js`).
@@ -81,8 +82,8 @@
 
 **ينتظر مريم (بالترتيب):**
 1. ✅ GitHub Pages مفعّل (main، الجذر): https://wida3tk.github.io/Certi/
-2. ✅ الخلفية مفوّضة وتعمل للزوار المجهولين (اختُبر 2026-11-24: doGet، courses، verify، رفض الجلسات المزيفة والإجراءات الإدارية).
-   «Access Denied» السابق كان لأن التفويض لم يكتمل. `setup()` نُفّذ (الشيت ومجلدا Drive في «سلوكيرا — نظام الشهادات» عند maryam).
+2. ✅ الخلفية على care@ مفوّضة وتعمل للزوار المجهولين (اختُبر 2026-11-24). الشيت والمجلدات في Drive حساب care@ ومشاركة مع الفريق.
+   «Access Denied» يعني أن التفويض لم يكتمل. باقٍ: مشاركة شيت نظام العمليات مع care@ (عارض).
 3. **مراجعة القوالب** في صفحة المراجعة (الرابط في `templates/_staging/README.md`) ← ثم تفعيل المعتمد.
 4. **GoDaddy:** بعد عمل الموقع على github.io: أعد `docs/CNAME.pending` إلى `CNAME` في الجذر، وسجل CNAME `certificates` ← `wida3tk.github.io`،
    ثم Custom domain + Enforce HTTPS في إعدادات Pages.
