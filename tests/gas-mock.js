@@ -35,7 +35,7 @@ function makeSheet(name) {
 }
 
 function createEnv(opts = {}) {
-  const props = {}, cache = new Map(), files = {}, mails = [], spreadsheets = {};
+  const props = {}, cache = new Map(), files = {}, mails = [], spreadsheets = {}, shared = {};
   const site = opts.coursesJson || JSON.stringify([
     { id: 'persuasion-influence', nameAr: 'فن الإقناع والتأثير', name: 'The Art of Persuasion and Influence', type: 'short', active: true },
     { id: 'specialist', nameAr: 'إعداد الأخصائي', name: 'ABA Specialist', type: 'short', minDays: 10, active: true },
@@ -69,6 +69,7 @@ function createEnv(opts = {}) {
     return {
       getId: () => id, getUrl: () => 'https://drive/' + id,
       createFolder(n) { return folder(newId('F')); },
+      addEditor(e) { (shared[id] = shared[id] || []).push(e); },
       createFile(b) { const fid = newId('FILE'); files[fid] = { blob: b, folder: id, trashed: false }; return { getId: () => fid }; },
     };
   }
@@ -124,7 +125,7 @@ function createEnv(opts = {}) {
     const out = ctx.doPost({ postData: { contents: JSON.stringify(Object.assign({ action }, body)) } });
     return JSON.parse(out.content);
   };
-  return { ctx, props, cache, files, mails, spreadsheets, api, sheet: n => spreadsheets[props.SHEET_ID].getSheetByName(n) };
+  return { ctx, props, cache, files, mails, spreadsheets, shared, api, sheet: n => spreadsheets[props.SHEET_ID].getSheetByName(n) };
 }
 
 module.exports = { createEnv };

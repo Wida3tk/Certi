@@ -256,22 +256,13 @@ test('شرط 10 أيام: من 1 إلى 10 مسموح، ومن 1 إلى 9 ممن
   assert.strictEqual(r10.ok, true, r10.error);
 });
 
-test('الإرسال من care@ (alias)، وعنوان خاص للبرنامج الطويل، وإلا من حساب السكربت مع الرد إلى care@', () => {
-  const courses = JSON.stringify([
-    { id: 'persuasion-influence', nameAr: 'فن الإقناع والتأثير', name: 'Persuasion', type: 'short', active: true },
-    { id: 'obmp', nameAr: 'OBM-P', name: 'OBM-P', type: 'long', senderEmail: 'obm@sulukera.com', active: true }]);
-  // care@ و obm@ مفعّلان
-  let env = createEnv({ coursesJson: courses, aliases: ['care@sulukera.com', 'obm@sulukera.com'] }); env.ctx.setup();
-  let t = login(env, 's@x.com');
-  assert.strictEqual(env.mails[0].via, 'GmailApp'); assert.strictEqual(env.mails[0].from, 'care@sulukera.com');
-  env.mails.length = 0;
-  env.api('submitRequest', { token: t, data: form({ courseId: 'obmp' }) });
-  assert.strictEqual(env.mails[0].from, 'obm@sulukera.com'); assert.strictEqual(env.mails[0].replyTo, 'obm@sulukera.com');
-  // بلا aliases: MailApp مع الرد إلى care@
-  env = createEnv({ coursesJson: courses, aliases: [] }); env.ctx.setup();
+test('الإرسال: الرد إلى care@ دائماً، والإعداد يشارك المجلد مع الفريق', () => {
+  const env = fresh();
   login(env, 's@x.com');
-  assert.strictEqual(env.mails[0].via, 'MailApp'); assert.strictEqual(env.mails[0].replyTo, 'care@sulukera.com');
-  assert.ok(!env.mails[0].from);
+  assert.strictEqual(env.mails[0].replyTo, 'care@sulukera.com');
+  assert.strictEqual(env.mails[0].name, 'سلوكيرا | Sulukera');
+  const sh = env.shared[env.props.ROOT_FOLDER] || [];
+  assert.strictEqual(sh.sort().join(), ['care@sulukera.com', 'ehamdan@sulukera.com', 'raljalajil@sulukera.com'].join());
 });
 
 test('الفريق: المساعد والمحاسب مشرفون', () => {
