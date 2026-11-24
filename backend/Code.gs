@@ -420,13 +420,17 @@ function getMyData(token) {
 const NAME_EN_RE = /^[A-Za-zÀ-ɏ][A-Za-zÀ-ɏ .'\-]{1,79}$/;
 const NAME_AR_RE = /^[؀-ۿ][؀-ۿ\s]{1,79}$/;
 const clean_ = s => String(s || '').replace(/\s+/g, ' ').trim();
+/** توحيد الاسم الإنجليزي: أول حرف من كل اسم كبير والباقي صغير (REEM AL-HARBI ← Reem Al-Harbi) — قاعدة سلوكيرا */
+function titleName_(s) {
+  return clean_(s).toLowerCase().replace(/(^|[\s\-'.])([a-z\u00E0-\u024F])/g, (m, p, c) => p + c.toUpperCase());
+}
 
 /** طلب شهادة لدورة أو أكثر في نموذج واحد. كل دورة = طلب مستقل يُراجَع ويُعتمد أو يُرفض وحده، وتجمعها «رقم المجموعة» */
 const MAX_COURSES_PER_REQUEST = 15;
 function submitRequest(token, d) {
   const email = who_(token);
   d = d || {};
-  const nameEn = clean_(d.nameEn), nameAr = clean_(d.nameAr), city = clean_(d.city);
+  const nameEn = titleName_(d.nameEn), nameAr = clean_(d.nameAr), city = clean_(d.city);
   const platformEmail = cleanEmail_(d.platformEmail);
   if (!nameAr || !NAME_AR_RE.test(nameAr)) throw new Error('اكتب اسمك الثلاثي بالعربية.');
   if (!nameEn) throw new Error('اكتب اسمك بالإنجليزية كما تريده على الشهادة.');
@@ -684,7 +688,7 @@ function readForm_(url, fromDate) {
       const c = byName[normAr_(courseName)] || null;
       return {
         line: i + 2, time: t, email: cleanEmail_(r[col.email]), nameAr: col.nameAr >= 0 ? clean_(r[col.nameAr]) : '',
-        nameEn: clean_(r[col.nameEn]), platform: col.platform >= 0 ? cleanEmail_(r[col.platform]) : '',
+        nameEn: titleName_(r[col.nameEn]), platform: col.platform >= 0 ? cleanEmail_(r[col.platform]) : '',
         phone: col.phone >= 0 ? String(r[col.phone] || '').replace(/[\s\-()]/g, '') : '', city: col.city >= 0 ? clean_(r[col.city]) : '',
         courseName: courseName, course: c && c.active ? c : null, inactive: !!(c && !c.active),
         survey: sv.map(k => k >= 0 ? Number(r[k]) || '' : ''), comment: cm >= 0 ? String(r[cm] || '') : '',

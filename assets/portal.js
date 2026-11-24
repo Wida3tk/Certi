@@ -107,6 +107,8 @@ $('courseList').addEventListener('change', e => {
   updatePicked();
 });
 $('courseSearch').addEventListener('input', filterCourses);
+// الاسم الإنجليزي يُوحَّد فور الخروج من الخانة ليرى المتدرب الشكل النهائي
+$('fNameEn').addEventListener('blur', () => { $('fNameEn').value = titleName($('fNameEn').value); });
 
 const NAME_RE = /^[A-Za-zÀ-ɏ][A-Za-zÀ-ɏ .'\-]{1,79}$/;
 const NAME_AR_RE = /^[\u0600-\u06FF][\u0600-\u06FF\s]{1,79}$/;
@@ -114,6 +116,7 @@ $('bSubmit').onclick = async () => {
   const b = $('bSubmit');
   try {
     const v = id => $(id).value.replace(/\s+/g, ' ').trim();
+    $('fNameEn').value = titleName($('fNameEn').value);
     const nameEn = v('fNameEn'), nameAr = v('fNameAr');
     if (!PICKED.size) throw new Error('اختر الدورة (أو الدورات) التي أتممتها.');
     if (!NAME_AR_RE.test(nameAr)) throw new Error('اكتب اسمك الثلاثي بالعربية.');

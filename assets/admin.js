@@ -100,7 +100,8 @@ async function openReq(id) {
     $('dTplBox').classList.toggle('hide', tpls.length < 2);
     if (r.status === ST.PENDING || r.status === ST.ISSUED) prefetchTpl();
     $('dTitle').innerHTML = esc(r.nameAr || r.nameEn) + ' ' + pill(r.status);
-    $('dNameEn').value = r.nameEn || ''; $('dNameAr').value = r.nameAr || '';
+    // الاسم يُعرض موحّداً (أول حرف كبير)، ويمكن تعديله يدوياً قبل التوليد
+    $('dNameEn').value = titleName(r.nameEn || ''); $('dNameAr').value = r.nameAr || '';
     // التواريخ: البدء يُدخل يدوياً بعد التحقق من المنصة، والانتهاء افتراضياً تاريخ تقديم الطلب
     if (r.start) { $('dStart').value = r.start; setSrc('dStartSrc', 'محفوظ عند الإصدار السابق'); }
     else { $('dStart').value = ''; setSrc('dStartSrc', 'أدخليه بعد التحقق من المنصة', true); }

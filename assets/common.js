@@ -20,6 +20,10 @@ function pill(s) {
   const c = s === ST.ISSUED ? 'p-ok' : s === ST.REJECTED ? 'p-no' : s === ST.REVOKED ? 'p-rev' : 'p-wait';
   return '<span class="pill ' + c + '">' + esc(s) + '</span>';
 }
+/** توحيد الاسم الإنجليزي: أول حرف من كل اسم كبير والباقي صغير (REEM AL-HARBI ← Reem Al-Harbi) */
+function titleName(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase().replace(/(^|[\s\-'.])([a-z\u00E0-\u024F])/g, (m, p, c) => p + c.toUpperCase());
+}
 /** yyyy-MM-dd ← MM/dd/yyyy (صيغة الشهادة) */
 function usDate(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[2] + '/' + m[3] + '/' + m[1] : String(iso || ''); }
 

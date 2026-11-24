@@ -432,4 +432,17 @@ test('نسخ القالب: اختيار النسخة عند الاعتماد، �
   assert.ok(c.aliases.length === 1);
 });
 
+test('توحيد الاسم الإنجليزي: أول حرف كبير والباقي صغير', () => {
+  const env = fresh();
+  const f = env.ctx.titleName_;
+  assert.strictEqual(f('REEM ABDUKARIRI'), 'Reem Abdukariri');
+  assert.strictEqual(f('  sara   ahmed AL-HARBI '), 'Sara Ahmed Al-Harbi');
+  assert.strictEqual(f('Dr.REDA GAD'), 'Dr.Reda Gad');
+  assert.strictEqual(f("o'NEIL mcdonald"), "O'Neil Mcdonald");
+  const t = login(env, 'reem@x.com');
+  env.api('submitRequest', { token: t, data: form({ nameEn: 'REEM ABDUKARIRI' }) });
+  const ta = adminLogin(env, ADMIN);
+  assert.strictEqual(env.api('adminList', { token: ta }).data[0].nameEn, 'Reem Abdukariri');
+});
+
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));
