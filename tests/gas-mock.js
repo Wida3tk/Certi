@@ -76,7 +76,7 @@ function createEnv(opts = {}) {
   const ctx = {
     console: { log() {}, error() {} },
     Logger: { log() {} },
-    Session: { getScriptTimeZone: () => 'UTC' },
+    Session: { getScriptTimeZone: () => 'UTC', getEffectiveUser: () => ({ getEmail: () => 'maryam@sulukera.com' }) },
     PropertiesService: { getScriptProperties: () => ({
       getProperty: k => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = String(v); } }) },
     SpreadsheetApp: {
@@ -97,7 +97,11 @@ function createEnv(opts = {}) {
     CacheService: { getScriptCache: () => ({
       get: k => (cache.has(k) ? cache.get(k) : null), put: (k, v) => cache.set(k, String(v)), remove: k => cache.delete(k) }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    MailApp: { sendEmail: m => mails.push(m) },
+    MailApp: { sendEmail: m => mails.push(Object.assign({ via: 'MailApp' }, m)) },
+    GmailApp: {
+      getAliases: () => (opts.aliases || ['care@sulukera.com']),
+      sendEmail: (to, subject, body, o) => mails.push(Object.assign({ via: 'GmailApp', to, subject }, o)),
+    },
     UrlFetchApp: { fetch: url => ({ getResponseCode: () => 200, getContentText: () => site, _url: url }) },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: s => ({ setMimeType() { return this; }, content: s }) },
     Utilities: {

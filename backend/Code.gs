@@ -16,7 +16,10 @@
 /* ===================== الإعدادات ===================== */
 const DEFAULTS = {
   // من يحق له فتح لوحة المراجعة (مفصولة بفواصل في Script Properties)
-  ADMINS: 'maryam@sulukera.com,care@sulukera.com',
+  ADMINS: 'maryam@sulukera.com,care@sulukera.com,ehamdan@sulukera.com,raljalajil@sulukera.com',
+  // عنوان المرسل الافتراضي. يجب أن يكون «إرسال البريد باسم» (alias) مُفعّلاً في Gmail الحساب الذي يملك السكربت،
+  // وإلا تُرسل الرسالة من حساب السكربت نفسه مع الرد إلى هذا العنوان. البرامج الطويلة قد تحدد senderEmail خاصاً في courses.json
+  SENDER_EMAIL: 'care@sulukera.com',
   // المالية: تأكيد السداد للمخالصة (البرامج الطويلة) ورسوم تعديل الاسم — تُستخدم في المرحلة القادمة
   FINANCE: 'raljalajil@sulukera.com',
   // رابط الموقع (ينتهي بـ /) — منه تُقرأ قائمة الدورات ويُبنى رابط التحقق في QR
@@ -199,7 +202,8 @@ function courses_() {
   const list = JSON.parse(res.getContentText())
     .filter(c => c && c.id && c.name && c.nameAr)
     .map(c => ({ id: String(c.id), nameAr: String(c.nameAr), name: String(c.name),
-      type: c.type === 'long' ? 'long' : 'short', minDays: Number(c.minDays) || 0, active: c.active === true }));
+      type: c.type === 'long' ? 'long' : 'short', minDays: Number(c.minDays) || 0, active: c.active === true,
+      senderEmail: isEmail_(cleanEmail_(c.senderEmail)) ? cleanEmail_(c.senderEmail) : '' }));
   cache.put('courses', JSON.stringify(list), 600);
   return list;
 }
@@ -227,7 +231,7 @@ function requestCode(email) {
   const code = otp_();
   cache.put('otp:' + email, code, 600);
   cache.remove('try:' + email);
-  MailApp.sendEmail({
+  sendMail_({
     to: email,
     name: CONFIG.SENDER_NAME,
     replyTo: CONFIG.REPLY_TO,
@@ -355,8 +359,8 @@ function submitRequest(token, d) {
     s[CONFIG.SURVEY_COMMENT] = safe_(d.comment, 2000);
     appendObj_(TABS.SURVEY, SURVEY_HEADERS, s);
     try {
-      MailApp.sendEmail({
-        to: email, name: CONFIG.SENDER_NAME, replyTo: CONFIG.REPLY_TO,
+      sendMail_({
+        to: email, from: courseSender_(course.id),
         subject: 'استلمنا طلب شهادتك | ' + course.nameAr,
         htmlBody: shell_('استلمنا طلبك',
           '<p>مرحباً ' + esc_(nameAr) + '،</p>' +
@@ -517,8 +521,8 @@ function adminReject(token, id, reason) {
   reason = String(reason || '').trim();
   if (!reason) throw new Error('اكتبي سبب الرفض ليظهر للمتدرب.');
   setCells_(TABS.REQ, r._row, { 'الحالة': ST.REJECTED, 'ملاحظات': safe_(reason, 1000), 'اعتمدها': by });
-  MailApp.sendEmail({
-    to: r['البريد'], name: CONFIG.SENDER_NAME, replyTo: CONFIG.REPLY_TO,
+  sendMail_({
+    to: r['البريد'], from: courseSender_(r['معرّف الدورة']),
     subject: 'بخصوص طلب شهادة ' + r['اسم الدورة'],
     htmlBody: shell_('بخصوص طلب الشهادة',
       '<p>مرحباً ' + esc_(r['الاسم بالعربي'] || r['الاسم بالإنجليزي']) + '،</p>' +
@@ -536,6 +540,31 @@ function adminRevoke(token, id, reason) {
   setCells_(TABS.REQ, r._row, { 'الحالة': ST.REVOKED, 'ملاحظات': safe_(reason, 1000), 'اعتمدها': by });
   return 'أُلغيت الشهادة ' + r['رقم الشهادة'] + '. صفحة التحقق ستظهرها ملغاة.';
 }
+
+
+/* ===================== الإرسال ===================== */
+/** يرسل من عنوان سلوكيرا (care@ أو عنوان البرنامج) إن كان alias مفعّلاً، وإلا من حساب السكربت مع الرد إلى العنوان نفسه */
+function sendMail_(m) {
+  const from = cleanEmail_(m.from || setting_('SENDER_EMAIL'));
+  const opts = { name: m.name || CONFIG.SENDER_NAME, replyTo: m.replyTo || from, htmlBody: m.htmlBody };
+  if (m.attachments) opts.attachments = m.attachments;
+  if (from && aliases_().indexOf(from) >= 0) {
+    opts.from = from;
+    GmailApp.sendEmail(m.to, m.subject, 'يرجى فتح هذه الرسالة في برنامج يدعم HTML.', opts);
+  } else {
+    MailApp.sendEmail(Object.assign({ to: m.to, subject: m.subject }, opts));
+  }
+}
+function aliases_() {
+  const c = CacheService.getScriptCache(), hit = c.get('aliases');
+  if (hit != null) return JSON.parse(hit);
+  let list = [];
+  try { list = GmailApp.getAliases().map(cleanEmail_).concat([cleanEmail_(Session.getEffectiveUser().getEmail())]); } catch (e) { list = []; }
+  c.put('aliases', JSON.stringify(list), 3600);
+  return list;
+}
+/** مرسل الدورة: senderEmail من courses.json للبرامج الطويلة، وإلا الافتراضي */
+function courseSender_(courseId) { const c = courseById_(courseId); return (c && c.senderEmail) || setting_('SENDER_EMAIL'); }
 
 /* ===================== الإيميل ===================== */
 function shell_(title, inner) {
@@ -555,8 +584,8 @@ function sendCertEmail_(to, r, certNo, blob, test) {
   const verify = verifyUrl_(certNo);
   const btn = (href, label, bg) => '<a href="' + href + '" style="display:inline-block;background:' + bg +
     ';color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;margin:4px 0 4px 8px">' + label + '</a>';
-  MailApp.sendEmail({
-    to: to, name: CONFIG.SENDER_NAME, replyTo: CONFIG.REPLY_TO,
+  sendMail_({
+    to: to, from: courseSender_(r['معرّف الدورة']),
     subject: (test ? '[تجربة] ' : '') + CONFIG.SUBJECT.replace('{{course}}', r['اسم الدورة']),
     attachments: [blob],
     htmlBody: shell_('مبارك! 🎓',
