@@ -369,4 +369,44 @@ test('طلب عدة شهادات مرة واحدة: طلب مستقل لكل د�
   assert.match(env.api('submitRequest', { token: t2, data: form({ courseIds: Array.from({ length: 16 }, (_, i) => 'c' + i) }) }).error, /15/);
 });
 
+test('استيراد ردود Google Form من تاريخ معيّن: معاينة بلا كتابة، استيراد بلا تكرار، بلا إيميلات', () => {
+  const H = ['طابع زمني', 'الاسم الثلاثي باللغة العربية:', 'الاسم الثلاثي باللغة الإنجليزية:', 'البريد الالكتروني:', 'البريد الإلكتروني المستخدم في المنصة:',
+    'رقم الجوال:', 'المدينة:', 'الدورة :', 'كان محتوى الدورة منظماً ومتسلسلاً بصورة مناسبة', 'هل لديك أي ملاحظات أو مقترحات إضافية؟'];
+  const row = (d, email, course) => [d, 'سارة', 'Sara Ali', email, 'p@x.com', '0501234567', 'جدة', course, 5, 'شكراً'];
+  const FORM = '1EQeszwFORMxxxxxxxxxxxxxxxxxxxxx';
+  const env = createEnv({ extraSheets: { [FORM]: { 'ردود النموذج 1': [H,
+    row(new Date(2026, 10, 20, 10), 'old@x.com', 'فن الإقناع والتأثير'),
+    row(new Date(2026, 10, 22, 9), 'a@x.com', 'فن الاقناع و التأثير'),
+    row(new Date(2026, 10, 23, 9), 'b@x.com', 'إعداد الأخصائي'),
+    row(new Date(2026, 10, 23, 11), 'c@x.com', 'دورة غير معروفة'),
+    row(new Date(2026, 10, 24, 8), 'd@x.com', 'قديمة'),
+  ] } } });
+  // التاريخ داخل سياق vm
+  const VDate = require('vm').runInContext('Date', env.ctx);
+  env.spreadsheets[FORM].sheets[0].data.forEach((r, i) => { if (i && r[0] instanceof Date) r[0] = new VDate(r[0].getTime()); });
+  env.ctx.setup();
+  const ta = adminLogin(env, ADMIN);
+  const url = 'https://docs.google.com/spreadsheets/d/' + FORM + '/edit#gid=1';
+  const p = env.api('adminImportPreview', { token: ta, url, from: '2026-11-22' });
+  assert.strictEqual(p.ok, true, p.error);
+  assert.strictEqual(p.data.total, 4, 'from date filter');
+  assert.strictEqual(p.data.ready, 2); assert.strictEqual(p.data.unmatched, 2);
+  assert.ok(p.data.courses.some(c => c.name === 'قديمة' && c.inactive));
+  assert.strictEqual(env.sheet('الطلبات').data.length, 1, 'preview writes nothing');
+  env.mails.length = 0;
+  const r = env.api('adminImport', { token: ta, url, from: '2026-11-22' });
+  assert.strictEqual(r.ok, true, r.error); assert.match(r.data, /2 طلباً/);
+  assert.strictEqual(env.mails.length, 0);
+  const l = env.api('adminList', { token: ta }).data;
+  assert.strictEqual(l.length, 2); assert.ok(l.every(x => x.status === 'بانتظار المراجعة'));
+  assert.ok(l.some(x => x.email === 'a@x.com' && x.date === '2026-11-22' && x.courseId === 'persuasion-influence'));
+  // مرة ثانية: لا تكرار
+  assert.match(env.api('adminImport', { token: ta, url, from: '2026-11-22' }).data, /0 طلباً/);
+  // المتدرب يرى طلبه المستورد
+  assert.strictEqual(env.api('getMyData', { token: login(env, 'a@x.com') }).data.requests.length, 1);
+  // غير المشرف ممنوع، والشيت غير المتاح رسالة واضحة
+  assert.strictEqual(env.api('adminImportPreview', { token: login(env, 'z@x.com'), url, from: '2026-11-22' }).ok, false);
+  assert.match(env.api('adminImportPreview', { token: ta, url: 'https://docs.google.com/spreadsheets/d/NOPExxxxxxxxxxxxxxxxxxxxxxxx/edit', from: '2026-11-22' }).error, /care@/);
+});
+
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));

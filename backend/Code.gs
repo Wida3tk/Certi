@@ -623,6 +623,116 @@ function adminRevoke(token, id, reason) {
 }
 
 
+/* ===================== الاستيراد من Google Form (الطلبات القديمة) =====================
+ * يقرأ شيت ردود الفورم (يجب أن يكون care@ قادراً على فتحه)، ويحوّل كل رد من تاريخ معيّن إلى طلب «بانتظار المراجعة».
+ * المعاينة لا تكتب شيئاً. الاستيراد يتخطى المكرر (نفس البريد + الدورة + وقت الرد) فإعادة تشغيله آمنة. لا تُرسل إيميلات. */
+function normAr_(s) {
+  return String(s || '').replace(/[\u064B-\u065F\u0670\u0640]/g, '').replace(/[أإآٱ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+    .replace(/[^\u0600-\u06FFA-Za-z0-9]+/g, '').toLowerCase();
+}
+function sheetIdFromUrl_(url) {
+  const m = String(url || '').match(/\/d\/([A-Za-z0-9_-]{20,})/) || String(url || '').match(/^([A-Za-z0-9_-]{20,})$/);
+  if (!m) throw new Error('رابط الشيت غير صحيح.');
+  return m[1];
+}
+function readForm_(url, fromDate) {
+  if (!isIsoDate_(fromDate)) throw new Error('حددي تاريخ البداية.');
+  let ss;
+  try { ss = SpreadsheetApp.openById(sheetIdFromUrl_(url)); }
+  catch (e) { throw new Error('لا يستطيع النظام فتح الشيت. شاركيه مع care@sulukera.com (عارض) ثم أعيدي المحاولة.'); }
+  const gid = (String(url).match(/[#&?]gid=(\d+)/) || [])[1];
+  const sh = (gid && ss.getSheets().filter(x => String(x.getSheetId()) === gid)[0]) || ss.getSheets()[0];
+  const v = sh.getDataRange().getValues();
+  const head = v.shift().map(h => String(h).trim());
+  const find = (re, not) => head.findIndex(h => re.test(h) && !(not && not.test(h)));
+  const col = {
+    time: find(/طابع زمني|timestamp/i),
+    nameAr: find(/الاسم.*العربي/),
+    nameEn: find(/الاسم.*(الإنجليزي|الانجليزي|english)/i),
+    platform: find(/البريد.*المنصة|المنصة.*البريد/),
+    email: find(/البريد|e-?mail/i, /المنصة/),
+    phone: find(/الجوال|الهاتف|phone/i),
+    city: find(/المدينة|city/i),
+    course: head.reduce((best, h, i) => /الدورة|البرنامج/.test(h) && (best < 0 || h.length < head[best].length) ? i : best, -1),
+  };
+  const missing = Object.keys(col).filter(k => col[k] < 0 && ['time', 'email', 'nameEn', 'course'].indexOf(k) >= 0);
+  if (missing.length) throw new Error('لم أجد في الشيت الأعمدة: ' + missing.join('، ') + '. العناوين الموجودة: ' + head.join(' | '));
+  const sv = CONFIG.SURVEY.map(x => head.findIndex(h => normAr_(h).indexOf(normAr_(x.q)) >= 0));
+  const cm = head.findIndex(h => /ملاحظات|مقترحات/.test(h));
+  const from = new Date(fromDate + 'T00:00:00');
+  const all = courses_();
+  const byName = {}; all.forEach(c => { byName[normAr_(c.nameAr)] = c; });
+  return {
+    tab: sh.getName(), headers: head,
+    rows: v.map((r, i) => {
+      const t = r[col.time] instanceof Date ? r[col.time] : new Date(r[col.time]);
+      const courseName = String(r[col.course] || '').trim();
+      const c = byName[normAr_(courseName)] || null;
+      return {
+        line: i + 2, time: t, email: cleanEmail_(r[col.email]), nameAr: col.nameAr >= 0 ? clean_(r[col.nameAr]) : '',
+        nameEn: clean_(r[col.nameEn]), platform: col.platform >= 0 ? cleanEmail_(r[col.platform]) : '',
+        phone: col.phone >= 0 ? String(r[col.phone] || '').replace(/[\s\-()]/g, '') : '', city: col.city >= 0 ? clean_(r[col.city]) : '',
+        courseName: courseName, course: c && c.active ? c : null, inactive: !!(c && !c.active),
+        survey: sv.map(k => k >= 0 ? Number(r[k]) || '' : ''), comment: cm >= 0 ? String(r[cm] || '') : '',
+      };
+    }).filter(x => x.time instanceof Date && !isNaN(x.time) && x.time >= from && x.email),
+  };
+}
+function importKey_(email, courseId, time) { return email + '|' + courseId + '|' + Utilities.formatDate(time, tz_(), 'yyyy-MM-dd HH:mm'); }
+function adminImportPreview(token, url, fromDate) {
+  admin_(token);
+  const f = readForm_(url, fromDate);
+  const existing = {};
+  rows_(TABS.REQ).forEach(r => { if (r['مفتاح الاستيراد']) existing[r['مفتاح الاستيراد']] = 1; });
+  const names = {};
+  f.rows.forEach(x => {
+    const k = x.courseName || '(فارغ)';
+    names[k] = names[k] || { name: k, count: 0, courseId: x.course ? x.course.id : '', inactive: x.inactive };
+    names[k].count++;
+  });
+  const ready = f.rows.filter(x => x.course && !existing[importKey_(x.email, x.course.id, x.time)]);
+  return {
+    tab: f.tab, total: f.rows.length, ready: ready.length,
+    already: f.rows.filter(x => x.course && existing[importKey_(x.email, x.course.id, x.time)]).length,
+    unmatched: f.rows.filter(x => !x.course).length,
+    courses: Object.keys(names).map(k => names[k]).sort((a, b) => b.count - a.count),
+    sample: ready.slice(0, 8).map(x => ({ line: x.line, date: Utilities.formatDate(x.time, tz_(), 'yyyy-MM-dd'), email: x.email, nameEn: x.nameEn, course: x.course.nameAr })),
+  };
+}
+function adminImport(token, url, fromDate) {
+  const by = admin_(token);
+  const f = readForm_(url, fromDate);
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const existing = {};
+    rows_(TABS.REQ).forEach(r => { if (r['مفتاح الاستيراد']) existing[r['مفتاح الاستيراد']] = 1; });
+    let n = 0;
+    f.rows.forEach(x => {
+      if (!x.course) return;
+      const key = importKey_(x.email, x.course.id, x.time);
+      if (existing[key]) return;
+      existing[key] = 1;
+      const id = 'REQ-' + Utilities.formatDate(x.time, tz_(), 'yyMMdd') + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 5).toUpperCase();
+      appendObj_(TABS.REQ, REQ_HEADERS.concat(['مفتاح الاستيراد', 'المصدر']), {
+        'رقم الطلب': id, 'تاريخ الطلب': Utilities.formatDate(x.time, tz_(), 'yyyy-MM-dd HH:mm'),
+        'الاسم بالإنجليزي': safe_(x.nameEn, 80), 'الاسم بالعربي': safe_(x.nameAr, 80), 'البريد': x.email,
+        'البريد في المنصة': safe_(x.platform, 200), 'الجوال': safe_(x.phone, 20), 'المدينة': safe_(x.city, 60),
+        'معرّف الدورة': x.course.id, 'اسم الدورة': x.course.nameAr, 'اسم الدورة (EN)': x.course.name,
+        'نوع البرنامج': TYPE_LABEL[x.course.type], 'الحالة': ST.PENDING,
+        'مفتاح الاستيراد': key, 'المصدر': 'Google Form (استيراد ' + by + ')',
+      });
+      if (x.survey.some(Boolean)) {
+        const sv = {}; sv['رقم الطلب'] = id; sv['التاريخ'] = Utilities.formatDate(x.time, tz_(), 'yyyy-MM-dd HH:mm'); sv['البريد'] = x.email; sv['الدورة'] = x.course.nameAr;
+        CONFIG.SURVEY.forEach((q, i) => sv[q.q] = x.survey[i]);
+        sv[CONFIG.SURVEY_COMMENT] = safe_(x.comment, 2000);
+        appendObj_(TABS.SURVEY, SURVEY_HEADERS, sv);
+      }
+      n++;
+    });
+    return 'استُورد ' + n + ' طلباً، وصارت «بانتظار المراجعة».' + (f.rows.filter(x => !x.course).length ? ' بقيت ردود لدورات غير مفعّلة أو غير معروفة؛ تُستورد عند تفعيلها بإعادة الاستيراد.' : '');
+  } finally { lock.releaseLock(); }
+}
+
 /* ===================== الإرسال ===================== */
 /** كل الإيميلات تخرج من الحساب الذي يملك السكربت وينشره — care@sulukera.com — والرد إليه أيضاً */
 function sendMail_(m) {
@@ -704,6 +814,8 @@ const ACTIONS = {
   adminApprove: b => adminApprove(b.token, b.data),
   adminReject: b => adminReject(b.token, b.id, b.reason),
   adminRevoke: b => adminRevoke(b.token, b.id, b.reason),
+  adminImportPreview: b => adminImportPreview(b.token, b.url, b.from),
+  adminImport: b => adminImport(b.token, b.url, b.from),
 };
 
 function json_(o) {

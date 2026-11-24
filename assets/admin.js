@@ -10,6 +10,32 @@ document.querySelectorAll('#aTabs button').forEach(b => b.onclick = () => {
 $('aSearch').oninput = () => renderList();
 $('bRefresh').onclick = () => loadAdmin();
 
+/* ---------- الاستيراد من Google Form ---------- */
+$('bImportOpen').onclick = () => $('importBox').classList.toggle('hide');
+$('bImpPreview').onclick = async () => {
+  const b = $('bImpPreview'); busy(b, true); $('bImpGo').classList.add('hide'); $('impOut').innerHTML = '';
+  try {
+    const p = await api('adminImportPreview', { token: SESSION.token, url: $('impUrl').value.trim(), from: $('impFrom').value });
+    $('impOut').innerHTML =
+      '<p>التبويب: <b>' + esc(p.tab) + '</b> — الردود من التاريخ: <b>' + p.total + '</b> · جاهزة للاستيراد: <b>' + p.ready + '</b>' +
+      (p.already ? ' · سبق استيرادها: ' + p.already : '') + (p.unmatched ? ' · <span style="color:var(--warn)">دورات غير مفعّلة أو غير معروفة: ' + p.unmatched + '</span>' : '') + '</p>' +
+      '<div class="tablewrap"><table><tr><th>اسم الدورة في الفورم</th><th>الردود</th><th>الحالة في النظام</th></tr>' +
+      p.courses.map(c => '<tr><td>' + esc(c.name) + '</td><td>' + c.count + '</td><td>' +
+        (c.courseId ? '<span class="pill p-ok">مفعّلة</span>' : c.inactive ? '<span class="pill p-wait">موجودة وغير مفعّلة</span>' : '<span class="pill p-no">غير معروفة</span>') + '</td></tr>').join('') +
+      '</table></div>';
+    $('bImpGo').classList.toggle('hide', !p.ready);
+    if (p.ready) $('bImpGo').textContent = 'استيراد ' + p.ready + ' طلباً';
+  } catch (e) { $('impOut').innerHTML = '<div class="msg err" style="display:block">' + esc(e.message) + '</div>'; }
+  busy(b, false);
+};
+$('bImpGo').onclick = async () => {
+  const b = $('bImpGo'); busy(b, true);
+  try { const m = await api('adminImport', { token: SESSION.token, url: $('impUrl').value.trim(), from: $('impFrom').value });
+    $('impOut').innerHTML = '<div class="msg ok" style="display:block">' + esc(m) + '</div>'; b.classList.add('hide'); loadAdmin(); }
+  catch (e) { $('impOut').innerHTML = '<div class="msg err" style="display:block">' + esc(e.message) + '</div>'; }
+  busy(b, false);
+};
+
 async function loadAdmin() {
   $('aList').innerHTML = '<p class="hint">جارٍ التحميل...</p>';
   try { ALL = await api('adminList', { token: SESSION.token }); renderList(); }

@@ -14,7 +14,7 @@ function makeSheet(name) {
   const data = [];
   const sh = {
     name, data,
-    getName: () => name,
+    getName: () => name, getSheetId: () => name.length * 7,
     getLastRow: () => data.length,
     getLastColumn: () => Math.max(0, ...data.map(r => r.length)),
     getMaxRows: () => Math.max(1000, data.length),
@@ -54,6 +54,12 @@ function createEnv(opts = {}) {
     };
     spreadsheets[id] = ss; return ss;
   }
+  // شيتات إضافية للاختبار (مثل ردود Google Form): { id: { tab: [[...], ...] } }
+  Object.keys(opts.extraSheets || {}).forEach(id => {
+    const ss = makeSS(id);
+    Object.keys(opts.extraSheets[id]).forEach(tab => { const t = ss.insertSheet(tab); opts.extraSheets[id][tab].forEach(r => t.appendRow(r)); });
+    ss.sheets.splice(0, 1); // بدون Sheet1
+  });
   // نظام العمليات
   if (opts.ops !== false) {
     const ops = makeSS('OPS'); const t = ops.insertSheet('العملاء');
