@@ -31,7 +31,7 @@ const DEFAULTS = {
 const CONFIG = {
   SENDER_NAME: 'سلوكيرا | Sulukera',
   REPLY_TO: 'care@sulukera.com',
-  SUBJECT: 'شهادتك من سلوكيرا 🎓 | {{course}}',
+  SUBJECT: '🎓 مبارك! شهادتك في «{{course}}» جاهزة',
   COLOR_PRIMARY: '#0C40FB',
   COLOR_DARK: '#031233',
   LOGO_URL: 'https://sulukera.com/wp-content/uploads/2026/10/%D8%B4%D8%B9%D8%A7%D8%B1-%D8%A7%D8%A8%D9%8A%D8%B6.png', // الشعار الأبيض من موقع سلوكيرا
@@ -537,7 +537,7 @@ function adminApprove(token, d) {
   const blob = Utilities.newBlob(Utilities.base64Decode(String(d.pdf)), 'application/pdf', fileName);
   if (blob.getBytes().slice(0, 4).map(b => String.fromCharCode(b)).join('') !== '%PDF') throw new Error('ملف الشهادة غير صالح.');
 
-  const view = Object.assign({}, r, { 'الاسم بالإنجليزي': nameEn });
+  const view = Object.assign({}, r, { 'الاسم بالإنجليزي': nameEn, 'تاريخ البدء': d.start, 'تاريخ الإتمام': d.end });
   if (d.test) {
     sendCertEmail_(cleanEmail_(by), view, d.certNo, blob, true);
     return 'تم إرسال نسخة تجريبية إلى ' + by + ' (لم تتغير حالة الطلب).';
@@ -604,10 +604,20 @@ function shell_(title, inner) {
     'للاستفسار: <a href="mailto:' + CONFIG.REPLY_TO + '">' + CONFIG.REPLY_TO + '</a></div></div></div>';
 }
 
+/** yyyy-MM-dd ← MM/dd/yyyy كما على الشهادة */
+function usDate_(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[2] + '/' + m[3] + '/' + m[1] : String(iso || ''); }
+
+/** إيميل الشهادة — النص المعتمد من مريم (الاقتراح «ب»، 2026-11-24) */
 function sendCertEmail_(to, r, certNo, blob, test) {
   const verify = verifyUrl_(certNo);
   const btn = (href, label, bg) => '<a href="' + href + '" style="display:inline-block;background:' + bg +
     ';color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;margin:4px 0 4px 8px">' + label + '</a>';
+  const cell = 'padding:9px 14px;border-bottom:1px solid #E3E8F2';
+  const line = (k, v) => '<tr><td style="' + cell + ';color:#5B6478;width:42%">' + k + '</td><td style="' + cell + '"><b dir="ltr">' + esc_(v) + '</b></td></tr>';
+  const start = usDate_(r['تاريخ البدء']), end = usDate_(r['تاريخ الإتمام']);
+  const ex = (() => { const m = String(r['تاريخ البدء'] || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+    return m ? usDate_(r['تاريخ البدء']) + ' تعني ' + Number(m[3]) + ' ' + months[Number(m[2]) - 1] + ' ' + m[1] : '09/07/2026 تعني 7 سبتمبر 2026'; })();
   sendMail_({
     to: to,
     subject: (test ? '[تجربة] ' : '') + CONFIG.SUBJECT.replace('{{course}}', r['اسم الدورة']),
@@ -615,12 +625,16 @@ function sendCertEmail_(to, r, certNo, blob, test) {
     htmlBody: shell_('مبارك! 🎓',
       (test ? '<p style="background:#FFF4E5;padding:8px 12px;border-radius:8px">نسخة تجريبية للمراجِعة — لم تُرسل للمتدرب.</p>' : '') +
       '<p>مرحباً ' + esc_(r['الاسم بالعربي'] || r['الاسم بالإنجليزي']) + '،</p>' +
-      '<p>يسعدنا إتمامك <b>' + esc_(r['اسم الدورة']) + '</b>، ونرفق لك شهادتك.</p>' +
-      '<p style="background:#EEF4FB;padding:12px 16px;border-radius:8px">رقم الشهادة: <b dir="ltr">' + certNo + '</b></p>' +
-      '<p>' + btn(verify, 'صفحة التحقق من الشهادة', CONFIG.COLOR_PRIMARY) +
-      btn(appUrl_(), 'شهاداتي', CONFIG.COLOR_DARK) + '</p>' +
-      '<p style="color:#666;font-size:13px">يمكنك تحميل شهادتك في أي وقت من «شهاداتي» بالدخول ببريدك هذا، ويمكن لأي جهة التحقق منها برمز QR المطبوع عليها.</p>' +
-      '<p>مع تمنياتنا لك بالتوفيق،<br>فريق سلوكيرا</p>'),
+      '<p>نهنئك لحصولك على شهادة التعليم المستمر في:<br><b style="font-size:17px;color:' + CONFIG.COLOR_DARK + '">' + esc_(r['اسم الدورة']) + '</b></p>' +
+      '<table style="width:100%;border-collapse:collapse;background:#F5F8FF;border-radius:10px;margin:14px 0;font-size:14px">' +
+        line('رقم الشهادة', certNo) + line('الاسم على الشهادة', r['الاسم بالإنجليزي']) +
+        (start && end ? line('مدة الدورة', start + ' – ' + end) : '') + '</table>' +
+      '<p>📎 مرفق لك الشهادة، ويمكنك تحميلها في أي وقت من «شهاداتي»، والتحقق منها برمز QR المطبوع عليها.</p>' +
+      '<p>' + btn(verify, 'التحقق من الشهادة', CONFIG.COLOR_PRIMARY) + btn(appUrl_(), 'شهاداتي', CONFIG.COLOR_DARK) + '</p>' +
+      '<p style="background:#FFF8EB;padding:12px 16px;border-radius:8px;font-size:14px"><b>ملاحظة حول التاريخ:</b> التاريخ مكتوب بالصيغة الأمريكية المعتمدة لدى البورد: ' +
+        'الشهر ثم اليوم ثم السنة (MM/DD/YYYY). فمثلاً <span dir="ltr">' + ex.split(' تعني ')[0] + '</span> تعني ' + ex.split(' تعني ')[1] + '.</p>' +
+      '<p>يسعدنا أن نراك في برامج تدريبية قادمة تدعم مسارك المهني والعملي.</p>' +
+      '<p>مع أطيب التمنيات،<br>فريق سلوكيرا</p>'),
   });
 }
 
