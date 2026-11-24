@@ -29,6 +29,8 @@ ap.add_argument('psd'); ap.add_argument('out')
 ap.add_argument('--name-layer'); ap.add_argument('--date-format', default='MM/dd/yyyy')
 ap.add_argument('--qr', default='2210,1930,250', help='x,y,size بالبكسل')
 ap.add_argument('--certno', default='2335,2235,34', help='x,y,size بالبكسل (منتصف السطر)')
+ap.add_argument('--name-size', type=float, help='حجم خط الاسم الأساسي (يتجاهل حجم الاسم المحفوظ في الملف)')
+ap.add_argument('--name-maxwidth', type=float, help='أقصى عرض للاسم بالبكسل (طول الخط تحته)')
 a = ap.parse_args()
 os.makedirs(a.out, exist_ok=True)
 
@@ -57,7 +59,9 @@ if a.name_layer:
 else:
     cands = [l for l in types if l not in (start, end) and l.text.strip().upper() != 'CERTIFICATE'
              and '\r' not in l.text.strip() and len(l.text.strip()) < 60]
-    name = max(cands, key=lambda l: style(l)['size'], default=None)
+    # خط الاسم في قوالب سلوكيرا هو Tangerine؛ نفضّله على «أكبر طبقة» لأنه أدق
+    script = [l for l in cands if 'tangerine' in style(l)['psFont'].lower()]
+    name = max(script or cands, key=lambda l: style(l)['size'], default=None)
 missing = [n for n, l in (('الاسم', name), ('تاريخ البدء', start), ('تاريخ الانتهاء', end)) if l is None]
 if missing:
     sys.exit('لم أجد: ' + '، '.join(missing) + ' — مرّري --name-layer أو تأكدي من نص الطبقات.')
@@ -83,7 +87,8 @@ def field(key, l, extra):
 qx, qy, qs = map(float, a.qr.split(',')); cx, cy, cs = map(float, a.certno.split(','))
 nb = name.bbox
 layout = {'fields': [
-    field('nameEn', name, {'maxWidth': round((nb[2] - nb[0]) * 1.5)}),
+    field('nameEn', name, dict({'maxWidth': a.name_maxwidth or round((nb[2] - nb[0]) * 1.5)},
+                               **({'size': a.name_size} if a.name_size else {}))),
     field('start', start, {'prefix': 'Start date: ', 'format': a.date_format}),
     field('end', end, {'prefix': 'End date: ', 'format': a.date_format}),
     {'key': 'qr', 'x': qx, 'y': qy, 'size': qs, 'color': '#1F2440', 'bg': '#FFFFFF'},

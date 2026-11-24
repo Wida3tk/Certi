@@ -17,6 +17,8 @@
 const DEFAULTS = {
   // من يحق له فتح لوحة المراجعة (مفصولة بفواصل في Script Properties)
   ADMINS: 'maryam@sulukera.com,care@sulukera.com',
+  // المالية: تأكيد السداد للمخالصة (البرامج الطويلة) ورسوم تعديل الاسم — تُستخدم في المرحلة القادمة
+  FINANCE: 'raljalajil@sulukera.com',
   // رابط الموقع (ينتهي بـ /) — منه تُقرأ قائمة الدورات ويُبنى رابط التحقق في QR
   SITE_URL: 'https://certificates.sulukera.com/',
   // نظام العمليات (قراءة فقط) — المرحلة الثانية: يتغير المصدر هنا فقط
