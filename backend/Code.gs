@@ -23,13 +23,9 @@ const DEFAULTS = {
   SITE_URL: 'https://certificates.sulukera.com/',
   // احتياطي لقراءة قائمة الدورات إن لم يعمل النطاق بعد (GitHub Pages)
   PAGES_URL: 'https://wida3tk.github.io/Certi/',
-  // نظام العمليات (قراءة فقط) — المرحلة الثانية: يتغير المصدر هنا فقط
-  OPS_SHEET_ID: '1KdEwKu-Y5L1wII9qGU_pgMmCmAMVcCZiBlC26xR29bU',
-  OPS_TAB: 'العملاء',
-  OPS_COL_EMAIL: 'البريد الإلكتروني',
-  OPS_COL_PROGRAM: 'البرنامج',
-  OPS_COL_REGISTERED: 'تاريخ التسجيل',
-  OPS_COL_ACTIVATED: 'تاريخ التفعيل',
+  // رابط الموقع الذي تفتحه الروابط في الإيميلات («شهاداتي»، تعيين كلمة المرور). يصير SITE_URL بعد ربط النطاق
+  APP_URL: 'https://wida3tk.github.io/Certi/',
+  // نظام العمليات: غير مربوط حالياً بقرار مريم (2026-11-24). المرحلة الثانية: يُضاف مصدر البيانات هنا فقط
 };
 
 const CONFIG = {
@@ -57,8 +53,10 @@ const CONFIG = {
   ],
   SURVEY_COMMENT: 'هل لديك أي ملاحظات أو مقترحات إضافية؟',
   ISSUE_DAYS: 'يومين إلى ثلاثة أيام عمل',  // مدة الإصدار كما تظهر للمتدرب وفي الإيميلات
-  MAX_UPLOAD_MB: 5,
-  SESSION_HOURS: 6,
+  SESSION_HOURS: 6,          // جلسة المتدرب (رمز البريد)
+  ADMIN_SESSION_HOURS: 6,    // جلسة الإدارة (كلمة المرور) — تتجدد مع كل استخدام
+  PW_MIN: 10,                // أقل طول لكلمة مرور الإدارة
+  PW_ITER: 3000,             // تكرار التجزئة (يبطّئ التخمين)
 };
 
 function setting_(k) {
@@ -67,12 +65,13 @@ function setting_(k) {
 }
 function siteUrl_() { return String(setting_('SITE_URL')).replace(/\/?$/, '/'); }
 function verifyUrl_(certNo) { return siteUrl_() + '?v=' + encodeURIComponent(certNo); }
+function appUrl_() { return String(setting_('APP_URL')).replace(/\/?$/, '/'); }
 
 /* ===================== الأوراق ===================== */
 const TABS = { REQ: 'الطلبات', SURVEY: 'الرضا' };
 const REQ_HEADERS = [
   'رقم الطلب', 'تاريخ الطلب', 'الاسم بالإنجليزي', 'الاسم بالعربي', 'البريد', 'البريد في المنصة', 'الجوال', 'المدينة',
-  'معرّف الدورة', 'اسم الدورة', 'اسم الدورة (EN)', 'نوع البرنامج', 'صورة الإتمام', 'موجود في العمليات', 'بيانات العمليات',
+  'معرّف الدورة', 'اسم الدورة', 'اسم الدورة (EN)', 'نوع البرنامج',
   'الحالة', 'تاريخ البدء', 'تاريخ الإتمام', 'رقم الشهادة', 'ملف الشهادة', 'تاريخ الإصدار',
   'اعتمدها', 'ملاحظات',
 ];
@@ -103,7 +102,6 @@ function setup() {
     const root = DriveApp.createFolder('سلوكيرا — نظام الشهادات');
     props.setProperty('ROOT_FOLDER', root.getId());
     props.setProperty('CERTS_FOLDER', root.createFolder('الشهادات الصادرة').getId());
-    props.setProperty('PROOFS_FOLDER', root.createFolder('إثباتات الإتمام').getId());
     DriveApp.getFileById(ss.getId()).moveTo(root);
   }
   // الفريق يرى الشيت والملفات في Drive (محرّرون). الحساب المالك (care@) يملك كل شيء
@@ -179,7 +177,14 @@ function setCells_(name, row, obj) {
   });
 }
 function appendObj_(name, headers, obj) {
-  sheet_(name).appendRow(headers.map(h => obj[h] == null ? '' : obj[h]));
+  const sh = sheet_(name);
+  let head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  const missing = headers.filter(h => head.indexOf(h) < 0);
+  if (missing.length) {
+    sh.getRange(1, head.length + 1, 1, missing.length).setValues([missing]);
+    head = head.concat(missing);
+  }
+  sh.appendRow(head.map(h => obj[h] == null ? '' : obj[h]));
 }
 function findReq_(id) {
   const r = rows_(TABS.REQ).filter(x => String(x['رقم الطلب']) === String(id))[0];
@@ -264,7 +269,7 @@ function verifyCode(email, code) {
   cache.remove(k); cache.remove('try:' + email); cache.remove('cnt:' + email);
   const token = Utilities.getUuid() + Utilities.getUuid();
   cache.put('tok:' + token, email, CONFIG.SESSION_HOURS * 3600);
-  return { token: token, email: email, isAdmin: isAdmin_(email) };
+  return { token: token, email: email };
 }
 
 function who_(token) {
@@ -274,11 +279,81 @@ function who_(token) {
 }
 function admins_() { return String(setting_('ADMINS')).split(/[,\s]+/).map(cleanEmail_).filter(String); }
 function isAdmin_(email) { return admins_().indexOf(cleanEmail_(email)) >= 0; }
+/* ===================== دخول الإدارة (بريد + كلمة مرور) =====================
+ * كلمات المرور لا تُحفظ أبداً: يُحفظ ملح عشوائي + تجزئة SHA-256 مكررة في Script Properties (pw:<email>).
+ * التعيين أو الاستعادة برابط لمرة واحدة يصل إلى بريد عضو الفريق نفسه (صالح 30 دقيقة).
+ * 5 محاولات خاطئة ← قفل 15 دقيقة. جلسات الإدارة منفصلة عن جلسات المتدربين ولا تُقبل رموز المتدربين في أي إجراء إداري. */
+function hashPw_(salt, pw) {
+  let h = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + '|' + pw, Utilities.Charset.UTF_8);
+  for (let i = 0; i < CONFIG.PW_ITER; i++) h = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, h.concat(Utilities.newBlob(salt).getBytes()));
+  return Utilities.base64Encode(h);
+}
+function sameStr_(a, b) { // مقارنة بزمن ثابت
+  a = String(a); b = String(b); let d = a.length ^ b.length;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) d |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return d === 0;
+}
+function adminLogin(email, password) {
+  email = cleanEmail_(email);
+  const cache = CacheService.getScriptCache();
+  if (cache.get('alock:' + email)) throw new Error('محاولات خاطئة كثيرة. حاول بعد 15 دقيقة.');
+  const stored = isAdmin_(email) ? PropertiesService.getScriptProperties().getProperty('pw:' + email) : null;
+  const ok = stored && (() => { const [salt, hash] = stored.split('$'); return sameStr_(hashPw_(salt, String(password || '')), hash); })();
+  if (!ok) {
+    const n = Number(cache.get('atry:' + email) || 0) + 1;
+    if (n >= 5) { cache.remove('atry:' + email); cache.put('alock:' + email, '1', 900); throw new Error('محاولات خاطئة كثيرة. أُقفل الدخول 15 دقيقة.'); }
+    cache.put('atry:' + email, String(n), 900);
+    throw new Error('البريد أو كلمة المرور غير صحيحة. أول مرة؟ اضغط «تعيين / نسيت كلمة المرور».');
+  }
+  cache.remove('atry:' + email);
+  const token = Utilities.getUuid() + Utilities.getUuid();
+  cache.put('atok:' + token, email, CONFIG.ADMIN_SESSION_HOURS * 3600);
+  return { token: token, email: email };
+}
+/** يرسل رابط تعيين كلمة المرور لعضو الفريق فقط — والرد واحد دائماً حتى لا يكشف من هو في الفريق */
+function adminResetRequest(email) {
+  email = cleanEmail_(email);
+  const done = 'إذا كان هذا البريد من فريق الإدارة فقد أرسلنا إليه رابط تعيين كلمة المرور (صالح 30 دقيقة).';
+  if (!isEmail_(email) || !isAdmin_(email)) return done;
+  const cache = CacheService.getScriptCache();
+  const n = Number(cache.get('rcnt:' + email) || 0);
+  if (n >= 3) throw new Error('طلبت روابط كثيرة. حاول بعد ساعة.');
+  cache.put('rcnt:' + email, String(n + 1), 3600);
+  const t = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  cache.put('reset:' + t, email, 1800);
+  const link = appUrl_() + 'admin.html?reset=' + t;
+  sendMail_({
+    to: email,
+    subject: 'تعيين كلمة مرور لوحة شهادات سلوكيرا',
+    htmlBody: shell_('تعيين كلمة المرور',
+      '<p>طُلب تعيين كلمة مرور لدخول لوحة إدارة الشهادات بهذا البريد.</p>' +
+      '<p><a href="' + link + '" style="display:inline-block;background:' + CONFIG.COLOR_PRIMARY + ';color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px">تعيين كلمة المرور</a></p>' +
+      '<p style="color:#666">الرابط صالح لمدة 30 دقيقة ولمرة واحدة. إذا لم تطلبه تجاهل الرسالة، ولن يتغير شيء.</p>'),
+  });
+  return done;
+}
+function adminSetPassword(resetToken, password) {
+  const cache = CacheService.getScriptCache();
+  const email = resetToken && cache.get('reset:' + resetToken);
+  if (!email || !isAdmin_(email)) throw new Error('الرابط غير صالح أو انتهت صلاحيته. اطلب رابطاً جديداً.');
+  password = String(password || '');
+  if (password.length < CONFIG.PW_MIN) throw new Error('كلمة المرور قصيرة: ' + CONFIG.PW_MIN + ' أحرف على الأقل.');
+  if (!/[A-Za-z\u0600-\u06FF]/.test(password) || !/\d/.test(password)) throw new Error('كلمة المرور يجب أن تحتوي حروفاً وأرقاماً.');
+  const salt = Utilities.getUuid().replace(/-/g, '');
+  PropertiesService.getScriptProperties().setProperty('pw:' + email, salt + '$' + hashPw_(salt, password));
+  cache.remove('reset:' + resetToken); cache.remove('alock:' + email); cache.remove('atry:' + email);
+  return adminLogin(email, password);
+}
 function admin_(token) {
-  const email = who_(token);
-  if (!isAdmin_(email)) throw new Error('غير مصرّح.');
+  const cache = CacheService.getScriptCache();
+  const email = token && typeof token === 'string' && cache.get('atok:' + token);
+  if (!email) throw new Error('غير مصرّح. سجّل الدخول إلى لوحة الإدارة.');
+  if (!isAdmin_(email)) { cache.remove('atok:' + token); throw new Error('غير مصرّح.'); }
+  cache.put('atok:' + token, email, CONFIG.ADMIN_SESSION_HOURS * 3600); // تجديد الجلسة مع الاستخدام
   return email;
 }
+function adminLogout(token) { if (token) CacheService.getScriptCache().remove('atok:' + token); return true; }
+function adminMe(token) { return { email: admin_(token) }; }
 function logout(token) {
   if (token) CacheService.getScriptCache().remove('tok:' + token);
   return true;
@@ -290,12 +365,10 @@ function getMyData(token) {
   const mine = rows_(TABS.REQ).filter(r => cleanEmail_(r['البريد']) === email);
   return {
     email: email,
-    isAdmin: isAdmin_(email),
     courses: activeCourses_(),
     survey: CONFIG.SURVEY,
     surveyComment: CONFIG.SURVEY_COMMENT,
     issueDays: CONFIG.ISSUE_DAYS,
-    maxMb: CONFIG.MAX_UPLOAD_MB,
     requests: mine.map(r => ({
       id: r['رقم الطلب'], course: r['اسم الدورة'], date: String(r['تاريخ الطلب']).slice(0, 10),
       status: r['الحالة'], certNo: r['الحالة'] === ST.ISSUED ? r['رقم الشهادة'] : '',
@@ -319,16 +392,14 @@ function submitRequest(token, d) {
   if (!NAME_EN_RE.test(nameEn)) throw new Error('الاسم يُكتب بالحروف الإنجليزية فقط (مثال: Sara Ahmed Al-Harbi).');
   if (!isEmail_(platformEmail)) throw new Error('اكتب البريد الإلكتروني المستخدم في المنصة.');
   if (!city) throw new Error('اكتب المدينة.');
+  const phone = String(d.phone || '').replace(/[\s\-()]/g, '');
+  if (!/^\+?\d{8,15}$/.test(phone)) throw new Error('اكتب رقم الجوال (أرقام فقط، مثال: 0501234567 أو +966501234567).');
   const course = activeCourses_().filter(c => c.id === String(d.courseId))[0];
   if (!course) throw new Error('اختر الدورة.');
-  if (!d.proof || !d.proof.data) throw new Error('ارفع صورة نسبة الإتمام من حسابك.');
-  if (!/^image\/(png|jpe?g|webp)$/.test(String(d.proof.type))) throw new Error('الصورة يجب أن تكون PNG أو JPG.');
   if (!Array.isArray(d.survey) || d.survey.length !== CONFIG.SURVEY.length ||
     d.survey.some((v, i) => !(Number(v) >= 1 && Number(v) <= CONFIG.SURVEY[i].max && Number(v) % 1 === 0)))
     throw new Error('أكمل جميع أسئلة استبيان الرضا.');
   if (!clean_(d.comment)) throw new Error('اكتب ملاحظاتك أو مقترحاتك في آخر الاستبيان.');
-  const bytes = Utilities.base64Decode(String(d.proof.data));
-  if (bytes.length > CONFIG.MAX_UPLOAD_MB * 1024 * 1024) throw new Error('حجم الصورة أكبر من المسموح.');
 
   const lock = LockService.getScriptLock(); lock.waitLock(20000);
   try {
@@ -340,18 +411,11 @@ function submitRequest(token, d) {
 
     const id = 'REQ-' + Utilities.formatDate(new Date(), tz_(), 'yyMMdd') + '-' +
       Utilities.getUuid().replace(/-/g, '').slice(0, 5).toUpperCase();
-    const file = DriveApp.getFolderById(prop_('PROOFS_FOLDER')).createFile(
-      Utilities.newBlob(bytes, d.proof.type, id + ' - ' + nameEn));
-
-    const ops = opsLookup_(email);
-    const okOps = ops.filter(o => !o.error);
     appendObj_(TABS.REQ, REQ_HEADERS, {
       'رقم الطلب': id, 'تاريخ الطلب': now_(), 'الاسم بالإنجليزي': safe_(nameEn, 80), 'الاسم بالعربي': safe_(nameAr, 80),
-      'البريد': email, 'البريد في المنصة': safe_(platformEmail, 200), 'الجوال': safe_(d.phone, 30), 'المدينة': safe_(city, 60),
+      'البريد': email, 'البريد في المنصة': safe_(platformEmail, 200), 'الجوال': safe_(phone, 20), 'المدينة': safe_(city, 60),
       'معرّف الدورة': course.id, 'اسم الدورة': course.nameAr, 'اسم الدورة (EN)': course.name,
-      'نوع البرنامج': TYPE_LABEL[course.type], 'صورة الإتمام': file.getId(),
-      'موجود في العمليات': ops.some(o => o.error) ? 'تعذّرت القراءة' : (okOps.length ? 'نعم' : 'لا'),
-      'بيانات العمليات': JSON.stringify(ops),
+      'نوع البرنامج': TYPE_LABEL[course.type],
       'الحالة': ST.PENDING,
     });
     const s = {}; s['رقم الطلب'] = id; s['التاريخ'] = now_(); s['البريد'] = email; s['الدورة'] = course.nameAr;
@@ -378,7 +442,7 @@ function submitRequest(token, d) {
 function downloadMyCert(token, certNo) {
   const email = who_(token);
   const r = rows_(TABS.REQ).filter(x => x['رقم الشهادة'] && x['رقم الشهادة'] === String(certNo))[0];
-  if (!r || (cleanEmail_(r['البريد']) !== email && !isAdmin_(email))) throw new Error('الشهادة غير موجودة.');
+  if (!r || cleanEmail_(r['البريد']) !== email) throw new Error('الشهادة غير موجودة.');
   if (r['الحالة'] !== ST.ISSUED) throw new Error('هذه الشهادة غير متاحة.');
   const f = DriveApp.getFileById(r['ملف الشهادة']);
   return { name: f.getName(), data: Utilities.base64Encode(f.getBlob().getBytes()) };
@@ -397,35 +461,13 @@ function verifyCert(certNo) {
   return { status: 'notfound', certNo: certNo };
 }
 
-/* ===================== نظام العمليات ===================== */
-function opsLookup_(email) {
-  try {
-    const sh = SpreadsheetApp.openById(setting_('OPS_SHEET_ID')).getSheetByName(setting_('OPS_TAB'));
-    if (!sh) throw new Error('التبويب «' + setting_('OPS_TAB') + '» غير موجود');
-    const v = sh.getDataRange().getValues();
-    const head = v.shift().map(h => String(h).trim());
-    const ci = k => {
-      const i = head.indexOf(setting_(k));
-      if (i < 0) throw new Error('العمود «' + setting_(k) + '» غير موجود');
-      return i;
-    };
-    const iE = ci('OPS_COL_EMAIL'), iP = ci('OPS_COL_PROGRAM'), iR = ci('OPS_COL_REGISTERED'), iA = ci('OPS_COL_ACTIVATED');
-    const fmt = x => x instanceof Date ? Utilities.formatDate(x, tz_(), 'yyyy-MM-dd') : String(x || '');
-    return v.filter(r => cleanEmail_(r[iE]) === email).map(r => ({
-      program: fmt(r[iP]), registered: fmt(r[iR]), activated: fmt(r[iA]),
-    }));
-  } catch (e) {
-    return [{ error: 'تعذّرت القراءة من نظام العمليات: ' + e.message }];
-  }
-}
-
 /* ===================== لوحة المراجعة ===================== */
 function adminList(token) {
   admin_(token);
   return rows_(TABS.REQ).map(r => ({
     id: r['رقم الطلب'], date: String(r['تاريخ الطلب']).slice(0, 10),
     nameEn: r['الاسم بالإنجليزي'], nameAr: r['الاسم بالعربي'], email: r['البريد'], course: r['اسم الدورة'], type: r['نوع البرنامج'],
-    inOps: r['موجود في العمليات'], status: r['الحالة'], certNo: r['رقم الشهادة'],
+    status: r['الحالة'], certNo: r['رقم الشهادة'],
     issued: r['تاريخ الإصدار'],
   })).reverse();
 }
@@ -433,21 +475,13 @@ function adminList(token) {
 function adminGet(token, id) {
   admin_(token);
   const r = findReq_(id);
-  let proof = null;
-  try {
-    const f = DriveApp.getFileById(r['صورة الإتمام']);
-    proof = 'data:' + f.getMimeType() + ';base64,' + Utilities.base64Encode(f.getBlob().getBytes());
-  } catch (e) { }
-  let ops = [];
-  try { ops = JSON.parse(r['بيانات العمليات'] || '[]'); } catch (e) { }
   const c = courseById_(r['معرّف الدورة']);
   return {
     id: r['رقم الطلب'], nameEn: r['الاسم بالإنجليزي'], nameAr: r['الاسم بالعربي'], email: r['البريد'],
     platformEmail: r['البريد في المنصة'], city: r['المدينة'],
     phone: r['الجوال'], courseId: String(r['معرّف الدورة']), course: r['اسم الدورة'], courseEn: r['اسم الدورة (EN)'],
     type: r['نوع البرنامج'], minDays: c ? c.minDays : 0,
-    date: String(r['تاريخ الطلب']).slice(0, 10), status: r['الحالة'], proof: proof,
-    ops: ops, opsNow: opsLookup_(cleanEmail_(r['البريد'])),
+    date: String(r['تاريخ الطلب']).slice(0, 10), status: r['الحالة'],
     start: r['تاريخ البدء'], end: r['تاريخ الإتمام'], certNo: r['رقم الشهادة'], note: r['ملاحظات'],
     approvedBy: r['اعتمدها'], issued: r['تاريخ الإصدار'],
   };
@@ -528,7 +562,7 @@ function adminReject(token, id, reason) {
       '<p>مرحباً ' + esc_(r['الاسم بالعربي'] || r['الاسم بالإنجليزي']) + '،</p>' +
       '<p>راجعنا طلب شهادة <b>' + esc_(r['اسم الدورة']) + '</b> ولم نتمكن من إصدارها حالياً للسبب التالي:</p>' +
       '<p style="background:#FFF4E5;padding:12px 16px;border-radius:8px">' + esc_(reason) + '</p>' +
-      '<p>يمكنك تقديم طلب جديد بعد المعالجة من <a href="' + siteUrl_() + '">موقع الشهادات</a>، أو الرد على هذه الرسالة.</p>'),
+      '<p>يمكنك تقديم طلب جديد بعد المعالجة من <a href="' + appUrl_() + '">موقع الشهادات</a>، أو الرد على هذه الرسالة.</p>'),
   });
   return 'تم الرفض وإبلاغ المتدرب.';
 }
@@ -578,7 +612,7 @@ function sendCertEmail_(to, r, certNo, blob, test) {
       '<p>يسعدنا إتمامك <b>' + esc_(r['اسم الدورة']) + '</b>، ونرفق لك شهادتك.</p>' +
       '<p style="background:#EEF4FB;padding:12px 16px;border-radius:8px">رقم الشهادة: <b dir="ltr">' + certNo + '</b></p>' +
       '<p>' + btn(verify, 'صفحة التحقق من الشهادة', CONFIG.COLOR_PRIMARY) +
-      btn(siteUrl_(), 'شهاداتي', CONFIG.COLOR_DARK) + '</p>' +
+      btn(appUrl_(), 'شهاداتي', CONFIG.COLOR_DARK) + '</p>' +
       '<p style="color:#666;font-size:13px">يمكنك تحميل شهادتك في أي وقت من «شهاداتي» بالدخول ببريدك هذا، ويمكن لأي جهة التحقق منها برمز QR المطبوع عليها.</p>' +
       '<p>مع تمنياتنا لك بالتوفيق،<br>فريق سلوكيرا</p>'),
   });
@@ -596,6 +630,12 @@ const ACTIONS = {
   getMyData: b => getMyData(b.token),
   submitRequest: b => submitRequest(b.token, b.data),
   downloadMyCert: b => downloadMyCert(b.token, b.certNo),
+  // دخول الإدارة
+  adminLogin: b => adminLogin(b.email, b.password),
+  adminResetRequest: b => adminResetRequest(b.email),
+  adminSetPassword: b => adminSetPassword(b.reset, b.password),
+  adminLogout: b => adminLogout(b.token),
+  adminMe: b => adminMe(b.token),
   // إداري (كل دالة تتحقق بنفسها عبر admin_)
   adminList: b => adminList(b.token),
   adminGet: b => adminGet(b.token, b.id),

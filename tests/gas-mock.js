@@ -107,6 +107,8 @@ function createEnv(opts = {}) {
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: s => ({ setMimeType() { return this; }, content: s }) },
     Utilities: {
       formatDate, getUuid: () => crypto.randomUUID(),
+      DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
+      computeDigest: (alg, v) => Array.from(crypto.createHash(alg).update(typeof v === 'string' ? Buffer.from(v, 'utf8') : Buffer.from(v.map(b => b & 255))).digest()).map(b => b > 127 ? b - 256 : b),
       base64Decode: s => Array.from(Buffer.from(s, 'base64')).map(b => b > 127 ? b - 256 : b),
       base64Encode: bytes => Buffer.from(bytes.map(b => b & 255)).toString('base64'),
       newBlob: blob,

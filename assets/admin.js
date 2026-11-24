@@ -14,7 +14,6 @@ async function loadAdmin() {
   $('aList').innerHTML = '<p class="hint">جارٍ التحميل...</p>';
   try { ALL = await api('adminList', { token: SESSION.token }); renderList(); }
   catch (e) {
-    if (/غير مصرّح/.test(e.message)) { auth.logout(); msg($('lMsg'), 'هذا البريد غير مصرّح له بلوحة المراجعة.', 'err'); return; }
     $('aList').innerHTML = '<div class="msg err">' + esc(e.message) + '</div>';
   }
 }
@@ -23,62 +22,40 @@ function renderList() {
   $('cPending').textContent = n || ''; $('cPending').classList.toggle('hide', !n);
   const q = $('aSearch').value.trim().toLowerCase();
   const l = ALL.filter(r => (!FILTER || r.status === FILTER) &&
-    (!q || [r.nameEn, r.email, r.certNo, r.id, r.course].some(x => String(x || '').toLowerCase().includes(q))));
+    (!q || [r.nameEn, r.nameAr, r.email, r.certNo, r.id, r.course].some(x => String(x || '').toLowerCase().includes(q))));
   $('aList').innerHTML = !l.length ? '<p class="hint">لا توجد طلبات.</p>' :
-    '<table><tr><th>التاريخ</th><th>الاسم</th><th>الدورة</th><th>في العمليات</th><th>الحالة</th></tr>' +
+    '<table><tr><th>التاريخ</th><th>الاسم</th><th>الدورة</th><th>الحالة</th></tr>' +
     l.map(r => '<tr class="click" data-id="' + esc(r.id) + '"><td dir="ltr" style="text-align:right">' + esc(r.date) + '</td><td>' +
       esc(r.nameAr || '') + '<div dir="ltr" style="text-align:right">' + esc(r.nameEn) + '</div><div class="hint" dir="ltr" style="text-align:right">' + esc(r.email) + '</div></td><td>' + esc(r.course) +
-      (r.type ? '<div class="hint">' + esc(r.type) + '</div>' : '') + '</td><td>' +
-      (r.inOps === 'نعم' ? '✓ نعم' : r.inOps === 'لا' ? '✗ لا' : '⚠️ ' + esc(r.inOps)) + '</td><td>' + pill(r.status) +
+      (r.type ? '<div class="hint">' + esc(r.type) + '</div>' : '') + '</td><td>' + pill(r.status) +
       (r.certNo ? '<div class="hint" dir="ltr" style="text-align:right">' + esc(r.certNo) + '</div>' : '') + '</td></tr>').join('') + '</table>';
   document.querySelectorAll('tr.click').forEach(tr => tr.onclick = () => openReq(tr.dataset.id));
 }
 $('bCloseD').onclick = () => { $('aDetail').classList.add('hide'); $('aListCard').classList.remove('hide'); $('aTabs').classList.remove('hide'); loadAdmin(); };
 
-function opsBox(list, label) {
-  list = list || [];
-  return '<div class="src"><b>' + label + '</b><br>' + (!list.length ? 'غير موجود في نظام العمليات (غالباً مسجّل على عصارة فقط)' :
-    list.map(o => o.error ? '⚠️ ' + esc(o.error) : 'البرنامج: <b>' + esc(o.program) + '</b> · التسجيل: <span dir="ltr">' + esc(o.registered || '—') +
-      '</span> · التفعيل: <span dir="ltr">' + esc(o.activated || '—') + '</span>').join('<br>')) + '</div>';
-}
 function setSrc(id, text, none) { $(id).textContent = text; $(id).classList.toggle('none', !!none); }
 
 async function openReq(id) {
   $('aListCard').classList.add('hide'); $('aTabs').classList.add('hide'); $('aDetail').classList.remove('hide');
   $('dTitle').textContent = 'جارٍ التحميل...'; $('prev').innerHTML = ''; $('dActs').innerHTML = '';
-  $('dRej').classList.add('hide'); $('dReason').value = ''; $('dProof').innerHTML = ''; $('dOps').innerHTML = ''; $('dMeta').innerHTML = '';
+  $('dRej').classList.add('hide'); $('dReason').value = ''; $('dInfo').innerHTML = '';
   clearMsg($('dMsg')); GEN = null; CUR = null;
   try {
     const r = CUR = await api('adminGet', { token: SESSION.token, id: id });
     $('dTitle').innerHTML = esc(r.nameAr || r.nameEn) + ' ' + pill(r.status);
-    $('dProof').innerHTML = r.proof ? '<img alt="صورة الإتمام" id="proofImg" src="' + r.proof + '">' : '<p class="hint">لا توجد صورة.</p>';
-    if ($('proofImg')) $('proofImg').onclick = () => { const w = window.open(); if (w) { w.document.title = 'صورة الإتمام'; const i = w.document.createElement('img'); i.src = r.proof; i.style.maxWidth = '100%'; w.document.body.appendChild(i); } };
-    $('dOps').innerHTML = opsBox(r.ops, 'وقت تقديم الطلب') + opsBox(r.opsNow, 'الآن');
     $('dNameEn').value = r.nameEn || ''; $('dNameAr').value = r.nameAr || '';
-    // اقتراح التواريخ مع ذكر مصدر كل قيمة
-    const o = (r.opsNow || []).filter(x => !x.error && (x.activated || x.registered))[0] ||
-              (r.ops || []).filter(x => !x.error && (x.activated || x.registered))[0];
-    const fromNow = o && (r.opsNow || []).indexOf(o) >= 0;
-    if (r.start) { $('dStart').value = r.start; setSrc('dStartSrc', 'المصدر: محفوظ عند الإصدار السابق'); }
-    else if (o) {
-      $('dStart').value = o.activated || o.registered;
-      const many = ((fromNow ? r.opsNow : r.ops) || []).filter(x => !x.error).length > 1;
-      setSrc('dStartSrc', 'المصدر: نظام العمليات (' + (fromNow ? 'الآن' : 'وقت الطلب') + ') — ' + (o.activated ? 'تاريخ التفعيل' : 'تاريخ التسجيل') +
-        (many ? ' — له أكثر من برنامج، تأكدي من الصحيح' : ''), many);
-    } else { $('dStart').value = ''; setSrc('dStartSrc', 'المصدر: لا يوجد — أدخليه يدوياً من عصارة', true); }
-    if (r.end) { $('dEnd').value = r.end; setSrc('dEndSrc', 'المصدر: محفوظ عند الإصدار السابق'); }
-    else { $('dEnd').value = r.date; setSrc('dEndSrc', 'المصدر: تاريخ تقديم الطلب (افتراضي)'); }
-    $('dMeta').innerHTML = 'الدورة: <b>' + esc(r.course) + '</b>' + (r.type ? ' (' + esc(r.type) + ')' : '') +
-      (r.courseEn ? '<br><span dir="ltr">' + esc(r.courseEn) + '</span>' : '') +
-      (r.minDays ? '<br>شرط الإصدار: مدة إتمام ' + r.minDays + ' أيام على الأقل' : '') +
-      '<br>البريد: <span dir="ltr">' + esc(r.email) + '</span>' +
-      (r.platformEmail ? ' · بريد المنصة: <span dir="ltr">' + esc(r.platformEmail) + '</span>' : '') +
-      (r.city ? ' · المدينة: ' + esc(r.city) : '') +
-      (r.phone ? ' · الجوال: <span dir="ltr">' + esc(r.phone) + '</span>' : '') +
-      '<br>رقم الطلب: <span dir="ltr">' + esc(r.id) + '</span> · تاريخ الطلب: ' + esc(r.date) +
-      (r.certNo ? '<br>رقم الشهادة: <b dir="ltr">' + esc(r.certNo) + '</b>' : '') +
-      (r.approvedBy ? '<br>آخر إجراء بواسطة: <span dir="ltr">' + esc(r.approvedBy) + '</span>' : '') +
-      (r.note ? '<br>ملاحظات: ' + esc(r.note) : '');
+    // التواريخ: البدء يُدخل يدوياً بعد التحقق من المنصة، والانتهاء افتراضياً تاريخ تقديم الطلب
+    if (r.start) { $('dStart').value = r.start; setSrc('dStartSrc', 'محفوظ عند الإصدار السابق'); }
+    else { $('dStart').value = ''; setSrc('dStartSrc', 'أدخليه بعد التحقق من المنصة', true); }
+    if (r.end) { $('dEnd').value = r.end; setSrc('dEndSrc', 'محفوظ عند الإصدار السابق'); }
+    else { $('dEnd').value = r.date; setSrc('dEndSrc', 'افتراضياً: تاريخ تقديم الطلب'); }
+    const row = (k, v, ltr) => v ? '<div><span class="hint">' + k + ':</span> ' + (ltr ? '<span dir="ltr">' + esc(v) + '</span>' : esc(v)) + '</div>' : '';
+    $('dInfo').innerHTML =
+      row('الدورة', r.course) + (r.courseEn ? '<div dir="ltr" class="hint" style="text-align:right">' + esc(r.courseEn) + '</div>' : '') +
+      row('النوع', r.type) + (r.minDays ? '<div class="tag none">شرط الإصدار: مدة إتمام ' + r.minDays + ' أيام على الأقل</div>' : '') +
+      row('البريد', r.email, true) + row('بريد المنصة', r.platformEmail, true) + row('الجوال', r.phone, true) + row('المدينة', r.city) +
+      row('رقم الطلب', r.id, true) + row('تاريخ الطلب', r.date, true) + row('رقم الشهادة', r.certNo, true) +
+      row('آخر إجراء بواسطة', r.approvedBy, true) + row('ملاحظات', r.note);
     checkDays();
     const canGen = r.status === ST.PENDING || r.status === ST.ISSUED;
     $('bGen').classList.toggle('hide', !canGen);
@@ -163,9 +140,64 @@ async function approve(test) {
   } catch (e) { msg($('dMsg'), e.message, 'err'); renderActs(); }
 }
 
-const auth = setupLogin({
-  adminOnly: true,
-  onLogin: s => { SESSION = s; showAdmin(true); loadAdmin(); },
-  onLogout: () => { SESSION = null; showAdmin(false); },
-});
-if (auth.session.token) { SESSION = auth.session; showAdmin(true); loadAdmin(); } else showAdmin(false);
+/* ---------- دخول الإدارة: بريد + كلمة مرور ---------- */
+const ATOK = 'slk_admin';
+const aStore = {
+  get() { try { return JSON.parse(localStorage.getItem(ATOK) || 'null'); } catch (e) { return null; } },
+  set(v) { try { localStorage.setItem(ATOK, JSON.stringify(v)); } catch (e) { } },
+  del() { try { localStorage.removeItem(ATOK); } catch (e) { } },
+};
+function showForm(id) { ['fLogin', 'fForgot', 'fNewPass'].forEach(f => $(f).classList.toggle('hide', f !== id)); }
+function signedIn(s) {
+  SESSION = s; aStore.set(s);
+  $('who').classList.remove('hide'); $('whoEmail').textContent = s.email;
+  showAdmin(true); loadAdmin();
+}
+function signOut(note) {
+  if (SESSION) api('adminLogout', { token: SESSION.token }).catch(() => { });
+  SESSION = null; aStore.del();
+  $('who').classList.add('hide'); showAdmin(false); showForm('fLogin');
+  if (note) msg($('lMsg'), note, 'err'); else clearMsg($('lMsg'));
+}
+// أي رد «غير مصرّح» أثناء العمل = انتهت الجلسة
+onSessionExpired = () => signOut('انتهت الجلسة. سجّلي الدخول من جديد.');
+const _api = api;
+api = async (action, body) => {
+  try { return await _api(action, body); }
+  catch (e) { if (SESSION && /غير مصرّح/.test(e.message) && !/^adminLogin|^adminSet|^adminReset/.test(action)) onSessionExpired(); throw e; }
+};
+$('logout').onclick = () => signOut();
+$('fLogin').onsubmit = async e => {
+  e.preventDefault(); const b = $('bLogin'); busy(b, true);
+  try { signedIn(await api('adminLogin', { email: $('lEmail').value, password: $('lPass').value })); $('lPass').value = ''; clearMsg($('lMsg')); }
+  catch (err) { msg($('lMsg'), err.message, 'err'); }
+  busy(b, false);
+};
+$('bForgot').onclick = () => { $('rEmail').value = $('lEmail').value; showForm('fForgot'); clearMsg($('lMsg')); };
+$('bBackLogin').onclick = () => { showForm('fLogin'); clearMsg($('lMsg')); };
+$('fForgot').onsubmit = async e => {
+  e.preventDefault(); const b = $('bSendReset'); busy(b, true);
+  try { msg($('lMsg'), await api('adminResetRequest', { email: $('rEmail').value }), 'ok'); }
+  catch (err) { msg($('lMsg'), err.message, 'err'); }
+  busy(b, false);
+};
+const RESET = new URLSearchParams(location.search).get('reset');
+$('fNewPass').onsubmit = async e => {
+  e.preventDefault(); const b = $('bSetPass'); busy(b, true);
+  try {
+    if ($('nPass').value !== $('nPass2').value) throw new Error('كلمتا المرور غير متطابقتين.');
+    const s = await api('adminSetPassword', { reset: RESET, password: $('nPass').value });
+    history.replaceState(null, '', location.pathname); // إزالة الرابط من شريط العنوان
+    $('nPass').value = $('nPass2').value = '';
+    signedIn(s);
+  } catch (err) { msg($('lMsg'), err.message, 'err'); }
+  busy(b, false);
+};
+
+(async () => {
+  if (RESET) { signOut(); showForm('fNewPass'); return; }
+  const saved = aStore.get();
+  if (!saved || !saved.token) { showAdmin(false); showForm('fLogin'); return; }
+  try { await _api('adminMe', { token: saved.token }); signedIn(saved); }
+  catch (e) { aStore.del(); showAdmin(false); showForm('fLogin'); }
+})();

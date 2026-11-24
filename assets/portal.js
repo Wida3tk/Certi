@@ -30,7 +30,7 @@ async function showVerify(certNo) {
 }
 
 /* ---------- البوابة ---------- */
-let SESSION, SURVEY = [], ANS = [], PROOF = null, MAXMB = 5, COURSES = [];
+let SESSION, SURVEY = [], ANS = [], COURSES = [];
 
 function showPortal(on) {
   $('vLogin').classList.toggle('hide', on);
@@ -45,7 +45,7 @@ document.querySelectorAll('#vPortal .tabs button').forEach(b => b.onclick = () =
 async function loadPortal() {
   try {
     const d = await api('getMyData', { token: SESSION.token });
-    MAXMB = d.maxMb; SURVEY = d.survey; ANS = SURVEY.map(() => 0); COURSES = d.courses;
+    SURVEY = d.survey; ANS = SURVEY.map(() => 0); COURSES = d.courses;
     document.querySelectorAll('.issueDays').forEach(e => e.textContent = d.issueDays);
     $('commentLabel').textContent = d.surveyComment;
     const opts = list => list.map(c => '<option value="' + esc(c.id) + '">' + esc(c.nameAr) + '</option>').join('');
@@ -82,51 +82,11 @@ function renderMine(list) {
   });
 }
 
-/* صورة الإتمام: تُصغّر قبل الرفع إن كانت كبيرة (لقطات الشاشة على الجوال ضخمة) */
-function readProof(f) {
-  return new Promise((res, rej) => {
-    if (!/^image\/(png|jpe?g|webp)$/.test(f.type)) return rej(new Error('الصورة يجب أن تكون PNG أو JPG.'));
-    const rd = new FileReader();
-    rd.onerror = () => rej(new Error('تعذّرت قراءة الصورة.'));
-    rd.onload = () => {
-      const img = new Image();
-      img.onerror = () => rej(new Error('الملف ليس صورة صالحة.'));
-      img.onload = () => {
-        const MAX = 2000, big = Math.max(img.width, img.height) > MAX || f.size > 1.5 * 1024 * 1024;
-        if (!big) return res({ type: f.type, data: rd.result.split(',')[1], url: rd.result });
-        const k = Math.min(1, MAX / Math.max(img.width, img.height));
-        const cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
-        const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-        ctx.drawImage(img, 0, 0, cv.width, cv.height);
-        const url = cv.toDataURL('image/jpeg', 0.88);
-        res({ type: 'image/jpeg', data: url.split(',')[1], url: url });
-      };
-      img.src = rd.result;
-    };
-    rd.readAsDataURL(f);
-  });
-}
-async function takeFile(f) {
-  if (!f) return;
-  try {
-    const p = await readProof(f);
-    if (p.data.length * 0.75 > MAXMB * 1024 * 1024) throw new Error('حجم الصورة أكبر من ' + MAXMB + ' ميجابايت.');
-    PROOF = { type: p.type, data: p.data };
-    $('dropPrev').innerHTML = '<img alt="صورة الإتمام" src="' + p.url + '">';
-    clearMsg($('pMsg'));
-  } catch (e) { PROOF = null; $('dropPrev').innerHTML = ''; msg($('pMsg'), e.message, 'err'); }
-}
 $('fCourse').onchange = () => {
   const c = COURSES.filter(x => x.id === $('fCourse').value)[0];
   $('courseRule').classList.toggle('hide', !(c && c.minDays));
   if (c && c.minDays) $('courseRule').textContent = '⚠️ يُشترط لإصدار هذه الشهادة ألا تقل مدة الإتمام عن ' + c.minDays + ' أيام، ولا تُصدر إذا كانت أقل من ذلك.';
 };
-$('drop').onclick = () => $('fProof').click();
-$('drop').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fProof').click(); } };
-$('drop').ondragover = e => { e.preventDefault(); $('drop').classList.add('over'); };
-$('drop').ondragleave = () => $('drop').classList.remove('over');
-$('drop').ondrop = e => { e.preventDefault(); $('drop').classList.remove('over'); takeFile(e.dataTransfer.files[0]); };
-$('fProof').onchange = () => takeFile($('fProof').files[0]);
 
 const NAME_RE = /^[A-Za-zÀ-ɏ][A-Za-zÀ-ɏ .'\-]{1,79}$/;
 const NAME_AR_RE = /^[\u0600-\u06FF][\u0600-\u06FF\s]{1,79}$/;
@@ -139,19 +99,32 @@ $('bSubmit').onclick = async () => {
     if (!NAME_AR_RE.test(nameAr)) throw new Error('اكتب اسمك الثلاثي بالعربية.');
     if (!nameEn) throw new Error('اكتب اسمك بالإنجليزية كما تريده على الشهادة.');
     if (!NAME_RE.test(nameEn)) throw new Error('الاسم يُكتب بالحروف الإنجليزية فقط (مثال: Sara Ahmed Al-Harbi).');
-    if (!PROOF) throw new Error('ارفع صورة نسبة الإتمام من حسابك.');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v('fPlatformEmail'))) throw new Error('اكتب البريد الإلكتروني المستخدم في المنصة.');
     if (!v('fCity')) throw new Error('اكتب المدينة.');
+    const phone = $('fPhone').value.replace(/[\s\-()]/g, '');
+    if (!/^\+?\d{8,15}$/.test(phone)) throw new Error('اكتب رقم الجوال (أرقام فقط، مثال: 0501234567 أو +966501234567).');
     if (ANS.some(x => !x)) throw new Error('أكمل جميع أسئلة استبيان الرضا.');
     if (!v('fComment')) throw new Error('اكتب ملاحظاتك أو مقترحاتك في آخر الاستبيان.');
     if (!confirm('سيُطبع اسمك على الشهادة هكذا:\n\n' + nameEn + '\n\nهل الكتابة صحيحة؟')) return;
     busy(b, true); msg($('pMsg'), 'جارٍ إرسال الطلب...', 'info');
-    const id = await api('submitRequest', { token: SESSION.token, data: { courseId: $('fCourse').value, nameEn: nameEn, nameAr: nameAr,
-      platformEmail: v('fPlatformEmail'), city: v('fCity'), phone: $('fPhone').value, proof: PROOF, survey: ANS, comment: $('fComment').value } });
+    const courseId = $('fCourse').value;
+    let id;
+    try {
+      id = await api('submitRequest', { token: SESSION.token, data: { courseId: courseId, nameEn: nameEn, nameAr: nameAr,
+        platformEmail: v('fPlatformEmail'), city: v('fCity'), phone: phone, survey: ANS, comment: $('fComment').value } });
+    } catch (err) {
+      // انقطع الاتصال بعد وصول الطلب؟ نتحقق من «شهاداتي» قبل إظهار خطأ
+      if (!/الاتصال|رد غير متوقع/.test(err.message)) throw err;
+      const d = await api('getMyData', { token: SESSION.token }).catch(() => null);
+      const name = (COURSES.filter(c => c.id === courseId)[0] || {}).nameAr;
+      const got = d && d.requests.filter(r => r.status === ST.PENDING && r.course === name)[0];
+      if (!got) throw err;
+      id = got.id;
+    }
     msg($('pMsg'), 'وصل طلبك (رقم ' + id + '). تُصدر الشهادة خلال ' + document.querySelector('.issueDays').textContent +
       ' وتصلك على بريدك، وتجدها أيضاً في «شهاداتي».', 'ok');
     ['fNameEn', 'fNameAr', 'fPlatformEmail', 'fCity', 'fPhone', 'fComment'].forEach(i => $(i).value = ''); $('fCourse').value = ''; $('fCourse').onchange();
-    PROOF = null; $('fProof').value = ''; $('dropPrev').innerHTML = ''; ANS = ANS.map(() => 0);
+    ANS = ANS.map(() => 0);
     document.querySelectorAll('.rate button').forEach(x => x.classList.remove('on'));
     const d = await api('getMyData', { token: SESSION.token }); renderMine(d.requests);
   } catch (e) { msg($('pMsg'), e.message, 'err'); }

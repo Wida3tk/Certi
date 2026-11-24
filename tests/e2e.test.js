@@ -21,8 +21,7 @@ const server = http.createServer((req, res) => {
 (async () => {
   await new Promise(r => server.listen(0, r));
   const SITE = 'http://localhost:' + server.address().port + '/';
-  const env = createEnv({ coursesJson: fs.readFileSync(path.join(ROOT, 'templates/courses.json'), 'utf8'),
-    opsRows: [['سارة', 'sara@example.com', 'الإقناع والتأثير', '2026-09-01', '2026-09-07']] });
+  const env = createEnv({ coursesJson: fs.readFileSync(path.join(ROOT, 'templates/courses.json'), 'utf8') });
   env.ctx.setup();
   env.props.SITE_URL = SITE;
 
@@ -40,6 +39,23 @@ const server = http.createServer((req, res) => {
   page.on('pageerror', e => errors.push(e.message));
   page.on('dialog', d => d.accept(d.type() === 'prompt' ? 'إصدار بالخطأ' : undefined));
 
+  // دخول الإدارة: أول مرة برابط تعيين كلمة المرور (من الذاكرة المؤقتة كأنه وصل بالإيميل)، بعدها بالبريد وكلمة المرور
+  const PW = 'Sulukera2026x';
+  async function adminLogin(email) {
+    if (!env.props['pw:' + email]) {
+      await page.goto(SITE + 'admin.html');
+      await page.click('#bForgot'); await page.fill('#rEmail', email); await page.click('#bSendReset');
+      await page.waitForFunction(() => /رابط/.test(document.querySelector('#lMsg').textContent));
+      const key = [...env.cache.keys()].find(k => k.startsWith('reset:') && env.cache.get(k) === email);
+      await page.goto(SITE + 'admin.html?reset=' + key.slice(6));
+      await page.fill('#nPass', PW); await page.fill('#nPass2', PW); await page.click('#bSetPass');
+    } else {
+      await page.goto(SITE + 'admin.html');
+      await page.fill('#lEmail', email); await page.fill('#lPass', PW); await page.click('#bLogin');
+    }
+    await page.waitForSelector('#vAdmin:not(.hide)');
+    assert.ok(!page.url().includes('reset='), 'reset token removed from URL');
+  }
   async function login(email) {
     await page.fill('#lEmail', email); await page.click('#bSend');
     await page.waitForSelector('#step2:not(.hide)');
@@ -56,8 +72,7 @@ const server = http.createServer((req, res) => {
   await page.fill('#fNameEn', 'Sara Ahmed Al-Harbi');
   await page.fill('#fPlatformEmail', 'sara.platform@example.com');
   await page.fill('#fCity', 'الرياض');
-  await page.setInputFiles('#fProof', path.join(ROOT, 'docs/sample-certificate.jpg'));
-  await page.waitForSelector('#dropPrev img');
+  await page.fill('#fPhone', '0501234567');
   assert.strictEqual(await page.$$eval('.rate', l => l.length), 11);
   assert.strictEqual(await page.$$eval('.rate.ten button', l => l.length), 10);
   // بدون الاستبيان يُرفض
@@ -78,28 +93,33 @@ const server = http.createServer((req, res) => {
   await page.fill('#fPlatformEmail', 'sara.platform@example.com');
   await page.fill('#fCity', 'الرياض');
   await page.fill('#fComment', 'مرة ثانية');
-  await page.setInputFiles('#fProof', path.join(ROOT, 'docs/sample-certificate.jpg'));
-  await page.waitForSelector('#dropPrev img');
+  await page.fill('#fPhone', '0501234567');
   for (let i = 0; i < 11; i++) await page.click('.rate[data-i="' + i + '"] button[data-n="4"]');
   await page.click('#bSubmit');
   await page.waitForFunction(() => /قيد المراجعة/.test(document.querySelector('#pMsg').textContent));
   await page.click('button[data-t="pMine"]');
   await page.screenshot({ path: path.join(OUT, '2-portal-mine-pending.png'), fullPage: true });
 
-  // الطالب لا يفتح لوحة المراجعة (نفس الجلسة)
+  // لوحة الإدارة تطلب كلمة مرور ولا تقبل جلسة المتدرب
   await page.goto(SITE + 'admin.html');
-  await page.waitForFunction(() => /غير مصرّح/.test(document.querySelector('#lMsg').textContent));
+  await page.waitForSelector('#fLogin:not(.hide)');
+  assert.ok(await page.isHidden('#vAdmin'));
+  await page.screenshot({ path: path.join(OUT, '7-admin-login.png'), fullPage: true });
+  // كلمة مرور خاطئة
+  await page.fill('#lEmail', 'maryam@sulukera.com'); await page.fill('#lPass', 'wrong-pass-1'); await page.click('#bLogin');
+  await page.waitForFunction(() => /غير صحيحة/.test(document.querySelector('#lMsg').textContent));
 
   // ---------- المراجِعة ----------
-  await login('maryam@sulukera.com');
-  await page.waitForSelector('#vAdmin:not(.hide)');
+  await adminLogin('maryam@sulukera.com');
   await page.waitForSelector('tr.click');
   assert.match(await page.textContent('#aList'), /سارة أحمد الحربي/);
   await page.screenshot({ path: path.join(OUT, '3-admin-list.png'), fullPage: true });
   await page.click('tr.click');
-  await page.waitForSelector('#dProof img');
-  assert.strictEqual(await page.inputValue('#dStart'), '2026-09-07');
-  assert.match(await page.textContent('#dStartSrc'), /نظام العمليات/);
+  await page.waitForSelector('#dInfo div');
+  assert.match(await page.textContent('#dInfo'), /0501234567/);
+  assert.strictEqual(await page.inputValue('#dStart'), '');
+  assert.match(await page.textContent('#dStartSrc'), /أدخليه/);
+  await page.fill('#dStart', '2026-09-07');
   assert.match(await page.textContent('#dEndSrc'), /تاريخ تقديم الطلب/);
   await page.fill('#dEnd', '2026-09-09');
   await page.fill('#dNameEn', 'Abdulrahman Mohammed Abdullah Al-Qahtani');
@@ -140,9 +160,8 @@ const server = http.createServer((req, res) => {
   assert.match(dl.suggestedFilename(), new RegExp(certNo + '.*\\.pdf$'));
 
   // ---------- الإلغاء ----------
-  await page.evaluate(() => sessionStorage.clear());
-  await page.goto(SITE + 'admin.html');
-  await login('maryam@sulukera.com');
+  await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); });
+  await adminLogin('maryam@sulukera.com');
   await page.click('#aTabs button[data-f="صادرة"]');
   await page.click('tr.click');
   await page.waitForSelector('#bRevoke');

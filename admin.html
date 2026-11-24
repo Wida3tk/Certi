@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>سلوكيرا | مراجعة الشهادات</title>
+<title>سلوكيرا | لوحة الإدارة</title>
 <meta name="theme-color" content="#031233">
 <link rel="icon" href="assets/img/favicon.png">
 <link rel="stylesheet" href="assets/style.css">
@@ -17,23 +17,39 @@
     <a class="logo" href="admin.html" aria-label="سلوكيرا"><img src="assets/img/logo-white.png" alt="سلوكيرا Sulukera"></a>
     <nav><span class="who hide" id="who"><span class="email" id="whoEmail" dir="ltr"></span><a class="btn-pill-dark" id="logout">تسجيل الخروج</a></span></nav>
   </div>
-  <div class="hero-copy"><h1>لوحة مراجعة الشهادات</h1><p>مراجعة الطلبات، وتوليد الشهادات، واعتمادها وإرسالها.</p></div>
+  <div class="hero-copy"><h1>لوحة إدارة الشهادات</h1><p>مراجعة الطلبات، وتوليد الشهادات، واعتمادها وإرسالها.</p></div>
 </header>
 <main>
 
 <section id="vLogin" class="card narrow hide">
-  <h2>دخول لوحة المراجعة</h2>
-  <p class="hint">للمشرفين فقط. أدخلي بريدك وسيصلك رمز دخول.</p>
-  <div id="step1">
+  <!-- الدخول بالبريد وكلمة المرور -->
+  <form id="fLogin" autocomplete="on">
+    <h2>دخول لوحة الإدارة</h2>
+    <p class="hint">لفريق سلوكيرا فقط.</p>
     <label for="lEmail">البريد الإلكتروني</label>
-    <input id="lEmail" type="email" dir="ltr" autocomplete="email" placeholder="name@sulukera.com">
-    <div class="actions"><button id="bSend">إرسال الرمز</button></div>
-  </div>
-  <div id="step2" class="hide">
-    <label for="lCode">رمز الدخول <span class="hint">(أُرسل إلى <span id="sentTo" dir="ltr"></span>)</span></label>
-    <input id="lCode" inputmode="numeric" autocomplete="one-time-code" dir="ltr" maxlength="6" placeholder="••••••">
-    <div class="actions"><button id="bVerify">دخول</button><button class="ghost" id="bBack">تغيير البريد</button></div>
-  </div>
+    <input id="lEmail" name="username" type="email" dir="ltr" autocomplete="username" placeholder="name@sulukera.com" required>
+    <label for="lPass">كلمة المرور</label>
+    <input id="lPass" name="password" type="password" dir="ltr" autocomplete="current-password" required>
+    <div class="actions"><button id="bLogin" type="submit">دخول</button><button class="ghost" id="bForgot" type="button">تعيين / نسيت كلمة المرور</button></div>
+  </form>
+  <!-- طلب رابط التعيين -->
+  <form id="fForgot" class="hide">
+    <h2>تعيين كلمة المرور</h2>
+    <p class="hint">سنرسل رابطاً لمرة واحدة إلى بريدك في سلوكيرا لتعيين كلمة مرور جديدة. صالح 30 دقيقة.</p>
+    <label for="rEmail">البريد الإلكتروني</label>
+    <input id="rEmail" type="email" dir="ltr" autocomplete="username" placeholder="name@sulukera.com" required>
+    <div class="actions"><button id="bSendReset" type="submit">إرسال الرابط</button><button class="ghost" id="bBackLogin" type="button">رجوع للدخول</button></div>
+  </form>
+  <!-- تعيين كلمة مرور جديدة من الرابط -->
+  <form id="fNewPass" class="hide">
+    <h2>كلمة مرور جديدة</h2>
+    <p class="hint">10 أحرف على الأقل، فيها حروف وأرقام.</p>
+    <label for="nPass">كلمة المرور الجديدة</label>
+    <input id="nPass" type="password" dir="ltr" autocomplete="new-password" minlength="10" required>
+    <label for="nPass2">أعيدي كتابتها</label>
+    <input id="nPass2" type="password" dir="ltr" autocomplete="new-password" minlength="10" required>
+    <div class="actions"><button id="bSetPass" type="submit">حفظ والدخول</button></div>
+  </form>
   <div id="lMsg" class="msg" role="alert"></div>
 </section>
 
@@ -53,10 +69,9 @@
     </div>
     <div class="grid2" style="margin-top:16px">
       <div>
-        <h3>صورة الإتمام <span class="hint">(رفعها المتدرب — اضغطي للتكبير)</span></h3>
-        <div class="proof" id="dProof"></div>
-        <h3>نظام العمليات</h3>
-        <div id="dOps"></div>
+        <h3>بيانات المتدرب</h3>
+        <div class="src" id="dInfo"></div>
+        <p class="hint">التحقق من إتمام الدورة يتم يدوياً من المنصة قبل الاعتماد.</p>
       </div>
       <div>
         <h3>بيانات الشهادة</h3>
@@ -67,7 +82,6 @@
         <label for="dStart">تاريخ البدء</label><input id="dStart" type="date"><div class="tag" id="dStartSrc"></div>
         <label for="dEnd">تاريخ الانتهاء</label><input id="dEnd" type="date"><div class="tag" id="dEndSrc"></div>
         <div id="dDays" class="hide"></div>
-        <div class="src" id="dMeta"></div>
         <div class="actions"><button id="bGen">توليد ومعاينة</button></div>
       </div>
     </div>
