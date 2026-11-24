@@ -322,4 +322,22 @@ test('رحلات أقل: الدخول يرجع بيانات البوابة، و�
   assert.strictEqual(l.phone, '0501234567'); assert.strictEqual(l.courseId, 'persuasion-influence'); assert.strictEqual(l.platformEmail, 'sara.platform@x.com');
 });
 
+test('تذكّرني: جلسة موقّعة 30 يوماً، لا تُزوَّر ولا تنتهي بانتهاء ذاكرة الخادم', () => {
+  const env = fresh();
+  env.api('requestCode', { email: 'r@x.com' });
+  const tok = env.api('verifyCode', { email: 'r@x.com', code: env.cache.get('otp:r@x.com'), remember: true }).data.token;
+  assert.ok(tok.startsWith('r1.'));
+  assert.ok(![...env.cache.keys()].some(k => k === 'tok:' + tok), 'not stored server-side');
+  assert.strictEqual(env.api('getMyData', { token: tok }).data.email, 'r@x.com');
+  // تزوير: تغيير البريد داخل الرمز يُرفض
+  const [p, , sig] = tok.split('.');
+  const fake = p + '.' + Buffer.from('boss@x.com|' + (Date.now() + 1e9)).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_') + '.' + sig;
+  assert.strictEqual(env.api('getMyData', { token: fake }).ok, false);
+  // منتهي الصلاحية يُرفض
+  const expired = env.ctx.signedToken_('r@x.com', Date.now() - 1000);
+  assert.strictEqual(env.api('getMyData', { token: expired }).ok, false);
+  // لا يفتح الإدارة
+  assert.strictEqual(env.api('adminList', { token: tok }).ok, false);
+});
+
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));

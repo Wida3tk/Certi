@@ -1,6 +1,12 @@
 /* أدوات مشتركة بين بوابة المتدرب ولوحة المراجعة */
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+/* «تذكّرني»: localStorage يبقى بعد إغلاق المتصفح، وإلا sessionStorage */
+const keep = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { } },
+  del(k) { try { localStorage.removeItem(k); } catch (e) { } },
+};
 const store = {
   get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
   set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { } },
@@ -48,14 +54,14 @@ function downloadB64(name, b64, type) {
 /** دخول برمز من 6 أرقام — نفس المنطق في الصفحتين */
 function setupLogin(opts) {
   const TOKEN_KEY = 'slk_tok', EMAIL_KEY = 'slk_email';
-  const session = { token: store.get(TOKEN_KEY), email: store.get(EMAIL_KEY) };
+  const session = { token: store.get(TOKEN_KEY) || keep.get(TOKEN_KEY), email: store.get(EMAIL_KEY) || keep.get(EMAIL_KEY) };
   function showWho() {
     $('who').classList.toggle('hide', !session.token);
     $('whoEmail').textContent = session.email || '';
   }
   function logout(silent) {
     if (session.token) api('logout', { token: session.token }).catch(() => { });
-    store.del(TOKEN_KEY); store.del(EMAIL_KEY); session.token = null; session.email = null;
+    store.del(TOKEN_KEY); store.del(EMAIL_KEY); keep.del(TOKEN_KEY); keep.del(EMAIL_KEY); session.token = null; session.email = null;
     showWho(); opts.onLogout();
     if (silent !== true) { $('step2').classList.add('hide'); $('step1').classList.remove('hide'); clearMsg($('lMsg')); }
   }
@@ -76,13 +82,14 @@ function setupLogin(opts) {
   $('bVerify').onclick = async () => {
     const b = $('bVerify'); busy(b, true);
     try {
-      const r = await api('verifyCode', { email: $('lEmail').value, code: $('lCode').value.replace(/\D/g, '') });
+      const remember = !!($('lRemember') && $('lRemember').checked);
+      const r = await api('verifyCode', { email: $('lEmail').value, code: $('lCode').value.replace(/\D/g, ''), remember: remember });
       if (opts.adminOnly && !r.isAdmin) {
         api('logout', { token: r.token }).catch(() => { });
         throw new Error('هذا البريد غير مصرّح له بلوحة المراجعة.');
       }
       session.token = r.token; session.email = r.email;
-      store.set(TOKEN_KEY, r.token); store.set(EMAIL_KEY, r.email);
+      (remember ? keep : store).set(TOKEN_KEY, r.token); (remember ? keep : store).set(EMAIL_KEY, r.email);
       clearMsg($('lMsg')); showWho(); opts.onLogin(session, r.data);
     } catch (e) { msg($('lMsg'), e.message, 'err'); }
     busy(b, false);

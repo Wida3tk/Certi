@@ -54,6 +54,7 @@ const CONFIG = {
   SURVEY_COMMENT: 'هل لديك أي ملاحظات أو مقترحات إضافية؟',
   ISSUE_DAYS: 'يومين إلى ثلاثة أيام عمل',  // مدة الإصدار كما تظهر للمتدرب وفي الإيميلات
   SESSION_HOURS: 6,          // جلسة المتدرب (رمز البريد)
+  REMEMBER_DAYS: 30,         // «تذكّرني على هذا الجهاز»: جلسة موقّعة تبقى على جهاز المتدرب
   ADMIN_SESSION_HOURS: 6,    // جلسة الإدارة (كلمة المرور) — تتجدد مع كل استخدام
   PW_MIN: 10,                // أقل طول لكلمة مرور الإدارة
   PW_ITER: 3000,             // تكرار التجزئة (يبطّئ التخمين)
@@ -256,7 +257,7 @@ function requestCode(email) {
   return true;
 }
 
-function verifyCode(email, code) {
+function verifyCode(email, code, remember) {
   email = cleanEmail_(email);
   const cache = CacheService.getScriptCache();
   if (cache.get('lock:' + email)) throw new Error('محاولات خاطئة كثيرة. حاول بعد 15 دقيقة.');
@@ -274,15 +275,35 @@ function verifyCode(email, code) {
     throw new Error('الرمز غير صحيح أو انتهت صلاحيته.');
   }
   cache.remove(k); cache.remove('try:' + email); cache.remove('cnt:' + email);
-  const token = Utilities.getUuid() + Utilities.getUuid();
-  cache.put('tok:' + token, email, CONFIG.SESSION_HOURS * 3600);
+  let token;
+  if (remember) token = signedToken_(email, Date.now() + CONFIG.REMEMBER_DAYS * 86400000);
+  else { token = Utilities.getUuid() + Utilities.getUuid(); cache.put('tok:' + token, email, CONFIG.SESSION_HOURS * 3600); }
   let data = null;
   try { data = getMyData(token); } catch (e) { }
   return { token: token, email: email, data: data };
 }
 
+/* جلسة «تذكّرني»: r1.<البريد وتاريخ الانتهاء>.<توقيع HMAC بسرّ في Script Properties> — لا تُخزَّن في الخادم ولا يمكن تزويرها */
+function sessionSecret_() {
+  const p = PropertiesService.getScriptProperties();
+  let s = p.getProperty('SESSION_SECRET');
+  if (!s) { s = Utilities.getUuid() + Utilities.getUuid(); p.setProperty('SESSION_SECRET', s); }
+  return s;
+}
+function sign_(v) { return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(v, sessionSecret_())).replace(/=+$/, ''); }
+function signedToken_(email, exp) {
+  const body = Utilities.base64EncodeWebSafe(Utilities.newBlob(email + '|' + exp).getBytes()).replace(/=+$/, '');
+  return 'r1.' + body + '.' + sign_(body);
+}
+function readSignedToken_(t) {
+  const parts = String(t).split('.');
+  if (parts.length !== 3 || parts[0] !== 'r1' || !sameStr_(sign_(parts[1]), parts[2])) return null;
+  const pad = parts[1] + '==='.slice((parts[1].length + 3) % 4);
+  const [email, exp] = Utilities.newBlob(Utilities.base64DecodeWebSafe(pad)).getDataAsString().split('|');
+  return Number(exp) > Date.now() ? email : null;
+}
 function who_(token) {
-  const email = token && typeof token === 'string' && CacheService.getScriptCache().get('tok:' + token);
+  const email = token && typeof token === 'string' && (token.indexOf('r1.') === 0 ? readSignedToken_(token) : CacheService.getScriptCache().get('tok:' + token));
   if (!email) throw new Error('انتهت الجلسة. سجّل الدخول من جديد.');
   return email;
 }
@@ -642,7 +663,7 @@ function sendCertEmail_(to, r, certNo, blob, test) {
 const ACTIONS = {
   // عامة
   requestCode: b => requestCode(b.email),
-  verifyCode: b => verifyCode(b.email, b.code),
+  verifyCode: b => verifyCode(b.email, b.code, b.remember === true),
   verify: b => verifyCert(b.certNo),
   courses: () => activeCourses_(),
   // متدرب مسجّل

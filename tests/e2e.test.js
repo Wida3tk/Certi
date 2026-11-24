@@ -152,8 +152,13 @@ const server = http.createServer((req, res) => {
   // ---------- المتدرب يحمّل ----------
   await page.evaluate(() => sessionStorage.clear());
   await page.goto(SITE);
-  await login('sara@example.com');
+  await page.fill('#lEmail', 'sara@example.com'); await page.click('#bSend');
+  await page.waitForSelector('#step2:not(.hide)');
+  await page.check('#lRemember');
+  await page.fill('#lCode', env.cache.get('otp:sara@example.com'));
   await page.waitForSelector('#vPortal:not(.hide)');
+  assert.ok((await page.evaluate(() => localStorage.getItem('slk_tok'))).startsWith('r1.'), 'remember token kept on device');
+  await page.reload(); await page.waitForSelector('#vPortal:not(.hide)'); // ما زال مسجّلاً بعد إعادة التحميل
   await page.click('button[data-t="pMine"]');
   await page.waitForSelector('button.dl');
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button.dl')]);

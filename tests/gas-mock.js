@@ -62,8 +62,8 @@ function createEnv(opts = {}) {
   }
 
   function blob(bytes, type, name) {
-    bytes = Buffer.from(bytes);
-    return { getBytes: () => Array.from(bytes).map(b => b > 127 ? b - 256 : b), _buf: bytes, getMimeType: () => type, getName: () => name, setName(n) { name = n; return this; } };
+    bytes = Buffer.from(Array.isArray(bytes) ? bytes.map(b => b & 255) : bytes);
+    return { getDataAsString: () => bytes.toString('utf8'), getBytes: () => Array.from(bytes).map(b => b > 127 ? b - 256 : b), _buf: bytes, getMimeType: () => type, getName: () => name, setName(n) { name = n; return this; } };
   }
   function folder(id) {
     return {
@@ -108,6 +108,9 @@ function createEnv(opts = {}) {
     Utilities: {
       formatDate, getUuid: () => crypto.randomUUID(),
       DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
+      computeHmacSha256Signature: (v, k) => Array.from(crypto.createHmac('sha256', k).update(v).digest()).map(b => b > 127 ? b - 256 : b),
+      base64EncodeWebSafe: bytes => Buffer.from(bytes.map(b => b & 255)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
+      base64DecodeWebSafe: s => Array.from(Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')).map(b => b > 127 ? b - 256 : b),
       computeDigest: (alg, v) => Array.from(crypto.createHash(alg).update(typeof v === 'string' ? Buffer.from(v, 'utf8') : Buffer.from(v.map(b => b & 255))).digest()).map(b => b > 127 ? b - 256 : b),
       base64Decode: s => Array.from(Buffer.from(s, 'base64')).map(b => b > 127 ? b - 256 : b),
       base64Encode: bytes => Buffer.from(bytes.map(b => b & 255)).toString('base64'),
