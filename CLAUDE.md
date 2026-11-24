@@ -73,13 +73,9 @@
 **منجز ومرفوع على `main` وعلى الفرع `claude/tender-lovelace-vmi1w2`:** الموقع كامل بالتصميم الجديد، الخلفية منشورة، 43 قالباً محوّلة في `templates/_staging/`.
 
 **ينتظر مريم (بالترتيب):**
-1. **تفعيل GitHub Pages:** https://github.com/Wida3tk/Certi/settings/pages ← Deploy from a branch ← `main` و`/ (root)` ← Save.
-   (تفعيلها من الجلسة السحابية ممنوع عبر الـ proxy.) الموقع بعدها: https://wida3tk.github.io/Certi/
-2. **تفويض الخلفية:** فتح رابط الـ exec (في `assets/config.js`) بحساب maryam ← Review permissions ← Allow.
-   آخر اختبار أعطى «Access Denied – You need access» للزائر المجهول رغم أن النشر `ANYONE_ANONYMOUS` (تحققنا عبر Apps Script API).
-   إما أن التفويض لم يكتمل، أو سياسة Workspace تمنع المشاركة خارج sulukera.com
-   (الحل: admin.google.com ← Apps ← Google Workspace ← Drive and Docs ← Sharing settings ← Sharing outside of sulukera.com: ON).
-   اختبر بـ `curl -sL <exec>` — المتوقع `{"ok":true,...,"ready":true}`.
+1. ✅ GitHub Pages مفعّل (main، الجذر): https://wida3tk.github.io/Certi/
+2. ✅ الخلفية مفوّضة وتعمل للزوار المجهولين (اختُبر 2026-11-24: doGet، courses، verify، رفض الجلسات المزيفة والإجراءات الإدارية).
+   «Access Denied» السابق كان لأن التفويض لم يكتمل. `setup()` نُفّذ (الشيت ومجلدا Drive في «سلوكيرا — نظام الشهادات» عند maryam).
 3. **مراجعة القوالب** في صفحة المراجعة (الرابط في `templates/_staging/README.md`) ← ثم تفعيل المعتمد.
 4. **GoDaddy:** بعد عمل الموقع على github.io: أعد `docs/CNAME.pending` إلى `CNAME` في الجذر، وسجل CNAME `certificates` ← `wida3tk.github.io`،
    ثم Custom domain + Enforce HTTPS في إعدادات Pages.
