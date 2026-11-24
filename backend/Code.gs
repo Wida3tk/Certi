@@ -21,6 +21,8 @@ const DEFAULTS = {
   FINANCE: 'raljalajil@sulukera.com',
   // رابط الموقع (ينتهي بـ /) — منه تُقرأ قائمة الدورات ويُبنى رابط التحقق في QR
   SITE_URL: 'https://certificates.sulukera.com/',
+  // احتياطي لقراءة قائمة الدورات إن لم يعمل النطاق بعد (GitHub Pages)
+  PAGES_URL: 'https://wida3tk.github.io/Certi/',
   // نظام العمليات (قراءة فقط) — المرحلة الثانية: يتغير المصدر هنا فقط
   OPS_SHEET_ID: '1KdEwKu-Y5L1wII9qGU_pgMmCmAMVcCZiBlC26xR29bU',
   OPS_TAB: 'العملاء',
@@ -187,8 +189,13 @@ function courses_() {
   const cache = CacheService.getScriptCache();
   const hit = cache.get('courses');
   if (hit) return JSON.parse(hit);
-  const res = UrlFetchApp.fetch(siteUrl_() + 'templates/courses.json?t=' + Date.now(), { muteHttpExceptions: true });
-  if (res.getResponseCode() !== 200) throw new Error('تعذّرت قراءة قائمة الدورات من الموقع.');
+  let res = null;
+  for (const base of [siteUrl_(), String(setting_('PAGES_URL')).replace(/\/?$/, '/')]) {
+    try { res = UrlFetchApp.fetch(base + 'templates/courses.json?t=' + Date.now(), { muteHttpExceptions: true }); }
+    catch (e) { res = null; }
+    if (res && res.getResponseCode() === 200) break;
+  }
+  if (!res || res.getResponseCode() !== 200) throw new Error('تعذّرت قراءة قائمة الدورات من الموقع.');
   const list = JSON.parse(res.getContentText())
     .filter(c => c && c.id && c.name && c.nameAr)
     .map(c => ({ id: String(c.id), nameAr: String(c.nameAr), name: String(c.name),
