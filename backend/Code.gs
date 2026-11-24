@@ -36,9 +36,9 @@ const CONFIG = {
   SENDER_NAME: 'سلوكيرا | Sulukera',
   REPLY_TO: 'care@sulukera.com',
   SUBJECT: 'شهادتك من سلوكيرا 🎓 | {{course}}',
-  COLOR_PRIMARY: '#2E6DB4',
-  COLOR_DARK: '#1F3A5F',
-  LOGO_URL: '',                 // اختياري: رابط عام لشعار سلوكيرا (PNG)
+  COLOR_PRIMARY: '#0C40FB',
+  COLOR_DARK: '#031233',
+  LOGO_URL: 'https://sulukera.com/wp-content/uploads/2026/10/%D8%B4%D8%B9%D8%A7%D8%B1-%D8%A7%D8%A8%D9%8A%D8%B6.png', // الشعار الأبيض من موقع سلوكيرا
   CERT_PREFIX: 'SLK',           // رقم الشهادة: SLK-2026-000001
   // استبيان رضا المتدربين (إلزامي قبل الطلب) — من نموذج «استبيان رضا المتدربين - دورات مسجلة»
   // max: أعلى درجة (5 = ضعيف جداً..ممتاز، 10 = مقياس التوصية). التعليق في آخره إلزامي.
