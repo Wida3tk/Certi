@@ -21,7 +21,7 @@ async function loadTemplateFonts(fields) {
 
 const _tplCache = {};
 /** يُحمَّل القالب مرة واحدة ويُشارك بين التحميل المسبق والتوليد (يُحفظ الوعد نفسه) */
-function loadTemplate(courseId) {
+function loadTemplate(courseId) { // courseId هنا = مجلد القالب (templates/<dir>)
   if (!/^[a-z0-9-]+$/.test(courseId)) return Promise.reject(new Error('معرّف دورة غير صالح.'));
   if (_tplCache[courseId]) return _tplCache[courseId];
   const base = 'templates/' + courseId + '/';

@@ -39,6 +39,8 @@ function createEnv(opts = {}) {
   const site = opts.coursesJson || JSON.stringify([
     { id: 'persuasion-influence', nameAr: 'فن الإقناع والتأثير', name: 'The Art of Persuasion and Influence', type: 'short', active: true },
     { id: 'specialist', nameAr: 'إعداد الأخصائي', name: 'ABA Specialist', type: 'short', minDays: 10, active: true },
+    { id: 'abat', nameAr: 'شهادة أخصائي تحليل السلوك التطبيقي ABAT', aliases: ['شهادة فني تحليل السلوك التطبيقي ABAT'], name: 'ABAT 40-Hour Training',
+      type: 'short', minDays: 10, active: true, templates: [{ dir: 'abat-baik', label: 'أماني' }, { dir: 'abat-ghazal', label: 'حسين' }] },
     { id: 'old-course', nameAr: 'قديمة', name: 'Old', active: false }]);
   let nextId = 1;
   const newId = p => p + (nextId++);

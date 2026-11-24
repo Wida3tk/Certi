@@ -73,7 +73,7 @@ const TABS = { REQ: 'الطلبات', SURVEY: 'الرضا' };
 const REQ_HEADERS = [
   'رقم الطلب', 'تاريخ الطلب', 'الاسم بالإنجليزي', 'الاسم بالعربي', 'البريد', 'البريد في المنصة', 'الجوال', 'المدينة',
   'معرّف الدورة', 'اسم الدورة', 'اسم الدورة (EN)', 'نوع البرنامج', 'رقم المجموعة',
-  'الحالة', 'تاريخ البدء', 'تاريخ الإتمام', 'رقم الشهادة', 'ملف الشهادة', 'تاريخ الإصدار',
+  'الحالة', 'تاريخ البدء', 'تاريخ الإتمام', 'القالب', 'رقم الشهادة', 'ملف الشهادة', 'تاريخ الإصدار',
   'اعتمدها', 'ملاحظات',
 ];
 // أعمدة تُحفظ نصاً كما هي (حتى لا يحوّل الشيت الجوال لرقم أو التاريخ لكائن تاريخ)
@@ -176,8 +176,13 @@ function rows_(name) {
 }
 function setCells_(name, row, obj) {
   const sh = sheet_(name);
-  const head = MEMO_.head[name] || sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  let head = MEMO_.head[name] || sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
   dirty_(name);
+  const missing = Object.keys(obj).filter(k => head.indexOf(k) < 0);
+  if (missing.length) { // عمود جديد (مثل «القالب») في شيت أُنشئ قبل إضافته
+    sh.getRange(1, head.length + 1, 1, missing.length).setValues([missing]);
+    head = head.concat(missing);
+  }
   Object.keys(obj).forEach(k => {
     const c = head.indexOf(k);
     if (c >= 0) sh.getRange(row, c + 1).setValue(obj[k]);
@@ -216,7 +221,11 @@ function courses_() {
   const list = JSON.parse(res.getContentText())
     .filter(c => c && c.id && c.name && c.nameAr)
     .map(c => ({ id: String(c.id), nameAr: String(c.nameAr), name: String(c.name),
-      type: c.type === 'long' ? 'long' : 'short', minDays: Number(c.minDays) || 0, active: c.active === true}));
+      type: c.type === 'long' ? 'long' : 'short', minDays: Number(c.minDays) || 0, active: c.active === true,
+      // أسماء بديلة (كما في الفورم القديم) للمطابقة عند الاستيراد، ونسخ القالب (مثل اختلاف المدرب) — الافتراضي مجلد بنفس المعرّف
+      aliases: (Array.isArray(c.aliases) ? c.aliases : []).map(String),
+      templates: (Array.isArray(c.templates) && c.templates.length ? c.templates : [{ dir: c.id, label: '' }])
+        .filter(t => t && /^[a-z0-9-]+$/.test(String(t.dir))).map(t => ({ dir: String(t.dir), label: String(t.label || '') })) }));
   cache.put('courses', JSON.stringify(list), 600);
   return list;
 }
@@ -522,6 +531,7 @@ function reqView_(r) {
     date: String(r['تاريخ الطلب']).slice(0, 10), status: r['الحالة'],
     start: r['تاريخ البدء'], end: r['تاريخ الإتمام'], certNo: r['رقم الشهادة'], note: r['ملاحظات'],
     approvedBy: r['اعتمدها'], issued: r['تاريخ الإصدار'], group: r['رقم المجموعة'] || '',
+    templates: c ? c.templates : [{ dir: String(r['معرّف الدورة']), label: '' }], template: r['القالب'] || '',
   };
 }
 function adminList(token) {
@@ -569,6 +579,9 @@ function adminApprove(token, d) {
   const course = courseById_(r['معرّف الدورة']);
   if (course && course.minDays && daysInclusive_(d.start, d.end) < course.minDays)
     throw new Error('مدة الإتمام ' + daysInclusive_(d.start, d.end) + ' أيام، وهذه الشهادة تشترط ' + course.minDays + ' أيام على الأقل. لا يمكن إصدارها.');
+  const tpls = course ? course.templates : [{ dir: String(r['معرّف الدورة']), label: '' }];
+  const tpl = String(d.template || tpls[0].dir);
+  if (!tpls.some(t => t.dir === tpl)) throw new Error('القالب المختار لا يخص هذه الدورة.');
   const nameEn = String(d.nameEn || r['الاسم بالإنجليزي']).replace(/\s+/g, ' ').trim();
   if (!NAME_EN_RE.test(nameEn)) throw new Error('الاسم بالإنجليزية غير صالح.');
   if (!d.pdf) throw new Error('لم تتولد الشهادة.');
@@ -588,7 +601,7 @@ function adminApprove(token, d) {
   if (r['ملف الشهادة']) { try { DriveApp.getFileById(r['ملف الشهادة']).setTrashed(true); } catch (e) { } }
   setCells_(TABS.REQ, r._row, {
     'الحالة': ST.ISSUED, 'تاريخ البدء': d.start, 'تاريخ الإتمام': d.end,
-    'ملف الشهادة': file.getId(), 'تاريخ الإصدار': now_(), 'اعتمدها': by,
+    'ملف الشهادة': file.getId(), 'تاريخ الإصدار': now_(), 'اعتمدها': by, 'القالب': tpl,
     'الاسم بالإنجليزي': safe_(nameEn, 80),
   });
   sendCertEmail_(cleanEmail_(r['البريد']), view, d.certNo, blob, false);
@@ -662,7 +675,7 @@ function readForm_(url, fromDate) {
   const cm = head.findIndex(h => /ملاحظات|مقترحات/.test(h));
   const from = new Date(fromDate + 'T00:00:00');
   const all = courses_();
-  const byName = {}; all.forEach(c => { byName[normAr_(c.nameAr)] = c; });
+  const byName = {}; all.forEach(c => { [c.nameAr].concat(c.aliases || []).forEach(n => { byName[normAr_(n)] = c; }); });
   return {
     tab: sh.getName(), headers: head,
     rows: v.map((r, i) => {
@@ -733,7 +746,7 @@ function adminImport(token, url, fromDate) {
       }
       n++;
     });
-    return 'استُورد ' + n + ' طلباً، وصارت «بانتظار المراجعة».' + (f.rows.filter(x => !x.course).length ? ' بقيت ردود لدورات غير مفعّلة أو غير معروفة؛ تُستورد عند تفعيلها بإعادة الاستيراد.' : '');
+    return 'عدد الطلبات المستوردة: ' + n + '، وصارت «بانتظار المراجعة».' + (f.rows.filter(x => !x.course).length ? ' بقيت ردود لدورات غير مفعّلة أو غير معروفة؛ تُستورد عند تفعيلها بإعادة الاستيراد.' : '');
   } finally { lock.releaseLock(); }
 }
 

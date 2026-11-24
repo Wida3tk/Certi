@@ -57,7 +57,7 @@ test('متدرب جديد: دخول برمز ← طلب كامل ← يظهر ف
   const env = fresh();
   const t = login(env, 'Sara@X.com');
   const me = env.api('getMyData', { token: t }).data;
-  assert.strictEqual(me.courses.map(c => c.id).join(), 'persuasion-influence,specialist');
+  assert.strictEqual(me.courses.map(c => c.id).join(), 'persuasion-influence,specialist,abat');
   assert.strictEqual(me.courses[0].nameAr, 'فن الإقناع والتأثير'); // غير المفعّلة مخفية
   assert.strictEqual(me.survey.length, 11);
   const r = env.api('submitRequest', { token: t, data: form() });
@@ -382,6 +382,7 @@ test('استيراد ردود Google Form من تاريخ معيّن: معاين
     row(new Date(2026, 10, 23, 11), 'c@x.com', 'دورة غير معروفة'),
     row(new Date(2026, 10, 24, 8), 'd@x.com', 'قديمة'),
     row(new Date(2026, 10, 24, 9), 'e@x.com', 'فن الإقناع والتأثير', 'تم الإرسال'),
+    row(new Date(2026, 10, 24, 10), 'f@x.com', 'شهادة فني تحليل السلوك التطبيقي ABAT'),
   ] } } });
   // التاريخ داخل سياق vm
   const VDate = require('vm').runInContext('Date', env.ctx);
@@ -391,24 +392,44 @@ test('استيراد ردود Google Form من تاريخ معيّن: معاين
   const url = 'https://docs.google.com/spreadsheets/d/' + FORM + '/edit#gid=1';
   const p = env.api('adminImportPreview', { token: ta, url, from: '2026-11-22' });
   assert.strictEqual(p.ok, true, p.error);
-  assert.strictEqual(p.data.total, 5, 'from date filter'); assert.strictEqual(p.data.handled, 1);
-  assert.strictEqual(p.data.ready, 2); assert.strictEqual(p.data.unmatched, 2);
+  assert.strictEqual(p.data.total, 6, 'from date filter'); assert.strictEqual(p.data.handled, 1);
+  assert.strictEqual(p.data.ready, 3, 'alias «فني» matched ABAT'); assert.strictEqual(p.data.unmatched, 2);
   assert.ok(p.data.courses.some(c => c.name === 'قديمة' && c.inactive));
   assert.strictEqual(env.sheet('الطلبات').data.length, 1, 'preview writes nothing');
   env.mails.length = 0;
   const r = env.api('adminImport', { token: ta, url, from: '2026-11-22' });
-  assert.strictEqual(r.ok, true, r.error); assert.match(r.data, /2 طلباً/);
+  assert.strictEqual(r.ok, true, r.error); assert.match(r.data, /المستوردة: 3،/);
   assert.strictEqual(env.mails.length, 0);
   const l = env.api('adminList', { token: ta }).data;
-  assert.strictEqual(l.length, 2); assert.ok(l.every(x => x.status === 'بانتظار المراجعة'));
+  assert.strictEqual(l.length, 3); assert.ok(l.every(x => x.status === 'بانتظار المراجعة'));
+  assert.ok(l.some(x => x.email === 'f@x.com' && x.courseId === 'abat' && x.course === 'شهادة أخصائي تحليل السلوك التطبيقي ABAT'));
   assert.ok(l.some(x => x.email === 'a@x.com' && x.date === '2026-11-22' && x.courseId === 'persuasion-influence'));
   // مرة ثانية: لا تكرار
-  assert.match(env.api('adminImport', { token: ta, url, from: '2026-11-22' }).data, /0 طلباً/);
+  assert.match(env.api('adminImport', { token: ta, url, from: '2026-11-22' }).data, /المستوردة: 0،/);
   // المتدرب يرى طلبه المستورد
   assert.strictEqual(env.api('getMyData', { token: login(env, 'a@x.com') }).data.requests.length, 1);
   // غير المشرف ممنوع، والشيت غير المتاح رسالة واضحة
   assert.strictEqual(env.api('adminImportPreview', { token: login(env, 'z@x.com'), url, from: '2026-11-22' }).ok, false);
   assert.match(env.api('adminImportPreview', { token: ta, url: 'https://docs.google.com/spreadsheets/d/NOPExxxxxxxxxxxxxxxxxxxxxxxx/edit', from: '2026-11-22' }).error, /care@/);
+});
+
+test('نسخ القالب: اختيار النسخة عند الاعتماد، وحفظها، ورفض قالب لا يخص الدورة؛ والاسم البديل يُطابق في الاستيراد', () => {
+  const env = fresh();
+  const t = login(env, 'v@x.com');
+  const id = env.api('submitRequest', { token: t, data: form({ courseIds: ['abat'] }) }).data.id;
+  const ta = adminLogin(env, ADMIN);
+  const g = env.api('adminGet', { token: ta, id }).data;
+  assert.strictEqual(g.templates.map(x => x.dir).join(), 'abat-baik,abat-ghazal');
+  const num = env.api('adminReserveNumber', { token: ta, id }).data;
+  const base = { id, certNo: num.certNo, pdf: PDF, start: '2026-09-01', end: '2026-09-12' };
+  assert.match(env.api('adminApprove', { token: ta, data: Object.assign({ template: 'vb-mapp' }, base) }).error, /لا يخص/);
+  assert.strictEqual(env.api('adminApprove', { token: ta, data: Object.assign({ template: 'abat-ghazal' }, base) }).ok, true);
+  assert.strictEqual(env.api('adminGet', { token: ta, id }).data.template, 'abat-ghazal');
+  assert.strictEqual(env.sheet('الطلبات').data[0].indexOf('القالب') >= 0, true);
+  // الاسم البديل («فني») يُطابق «أخصائي» بعد التطبيع
+  assert.strictEqual(env.ctx.normAr_('شهادة فني تحليل السلوك التطبيقي ABAT') !== env.ctx.normAr_('شهادة أخصائي تحليل السلوك التطبيقي ABAT'), true);
+  const c = env.ctx.courses_().find(x => x.id === 'abat');
+  assert.ok(c.aliases.length === 1);
 });
 
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));

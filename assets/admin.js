@@ -24,7 +24,7 @@ $('bImpPreview').onclick = async () => {
         (c.courseId ? '<span class="pill p-ok">مفعّلة</span>' : c.inactive ? '<span class="pill p-wait">موجودة وغير مفعّلة</span>' : '<span class="pill p-no">غير معروفة</span>') + '</td></tr>').join('') +
       '</table></div>';
     $('bImpGo').classList.toggle('hide', !p.ready);
-    if (p.ready) $('bImpGo').textContent = 'استيراد ' + p.ready + ' طلباً';
+    if (p.ready) $('bImpGo').textContent = 'استيراد الطلبات (' + p.ready + ')';
   } catch (e) { $('impOut').innerHTML = '<div class="msg err" style="display:block">' + esc(e.message) + '</div>'; }
   busy(b, false);
 };
@@ -74,6 +74,11 @@ document.addEventListener('click', e => {
 });
 function setSrc(id, text, none) { $(id).textContent = text; $(id).classList.toggle('none', !!none); }
 
+function prefetchTpl() { loadTemplate($('dTpl').value).then(t => loadTemplateFonts(t.layout.fields || [])).catch(() => { }); }
+$('dTpl').addEventListener('change', () => {
+  prefetchTpl();
+  if (GEN) { GEN = null; $('prev').innerHTML = ''; renderActs(); msg($('dMsg'), 'تغيّرت نسخة القالب — أعيدي التوليد.', 'info'); }
+});
 /** بعد أي إجراء: تحديث القائمة من الخادم ثم إعادة فتح الطلب بحالته الجديدة */
 async function refreshAndOpen(id) {
   try { ALL = await api('adminList', { token: SESSION.token }); } catch (e) { }
@@ -88,7 +93,12 @@ async function openReq(id) {
     // الطلب موجود في القائمة المحمّلة: يُفتح فوراً بلا رحلة للخادم
     const r = CUR = Object.assign({}, ALL.find(x => x.id === id) || await api('adminGet', { token: SESSION.token, id: id }));
     // تحميل القالب والخطوط مسبقاً ليكون «توليد ومعاينة» أسرع
-    if (r.status === ST.PENDING || r.status === ST.ISSUED) loadTemplate(r.courseId).then(t => loadTemplateFonts(t.layout.fields || [])).catch(() => { });
+    // نسخة القالب: المحفوظة عند إصدار سابق، وإلا الأولى
+    const tpls = r.templates && r.templates.length ? r.templates : [{ dir: r.courseId, label: '' }];
+    $('dTpl').innerHTML = tpls.map(t => '<option value="' + esc(t.dir) + '">' + esc(t.label || t.dir) + '</option>').join('');
+    $('dTpl').value = tpls.some(t => t.dir === r.template) ? r.template : tpls[0].dir;
+    $('dTplBox').classList.toggle('hide', tpls.length < 2);
+    if (r.status === ST.PENDING || r.status === ST.ISSUED) prefetchTpl();
     $('dTitle').innerHTML = esc(r.nameAr || r.nameEn) + ' ' + pill(r.status);
     $('dNameEn').value = r.nameEn || ''; $('dNameAr').value = r.nameAr || '';
     // التواريخ: البدء يُدخل يدوياً بعد التحقق من المنصة، والانتهاء افتراضياً تاريخ تقديم الطلب
@@ -165,9 +175,9 @@ $('bGen').onclick = async () => {
     // يُحجز رقم الشهادة أولاً حتى يُطبع على الشهادة وفي رمز QR
     const num = await api('adminReserveNumber', { token: SESSION.token, id: CUR.id });
     CUR.certNo = num.certNo;
-    const out = await generateCertificate(CUR.courseId, { nameEn: nameEn, course: CUR.course,
+    const out = await generateCertificate($('dTpl').value, { nameEn: nameEn, course: CUR.course,
       start: $('dStart').value, end: $('dEnd').value, certNo: num.certNo, verifyUrl: num.verifyUrl });
-    GEN = { certNo: num.certNo, pdf: out.pdfBase64, nameEn: nameEn, start: $('dStart').value, end: $('dEnd').value };
+    GEN = { certNo: num.certNo, pdf: out.pdfBase64, nameEn: nameEn, start: $('dStart').value, end: $('dEnd').value , template: $('dTpl').value };
     $('prev').innerHTML = ''; $('prev').appendChild(out.canvas);
     msg($('dMsg'), 'راجعي المعاينة. رقم الشهادة: ' + num.certNo + ' — رابط التحقق: ' + num.verifyUrl, 'info');
     renderActs();
@@ -182,7 +192,7 @@ async function approve(test) {
   msg($('dMsg'), test ? 'جارٍ الإرسال التجريبي...' : 'جارٍ الإصدار والإرسال...', 'info');
   try {
     const r = await api('adminApprove', { token: SESSION.token, data: { id: CUR.id, certNo: GEN.certNo, pdf: GEN.pdf, test: test,
-      resend: CUR.status === ST.ISSUED, start: GEN.start, end: GEN.end, nameEn: GEN.nameEn } });
+      resend: CUR.status === ST.ISSUED, template: GEN.template, start: GEN.start, end: GEN.end, nameEn: GEN.nameEn } });
     msg($('dMsg'), r, 'ok');
     if (!test) { await refreshAndOpen(CUR.id); msg($('dMsg'), r, 'ok'); } else renderActs();
   } catch (e) { msg($('dMsg'), e.message, 'err'); renderActs(); }
