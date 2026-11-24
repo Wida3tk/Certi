@@ -66,8 +66,8 @@ const server = http.createServer((req, res) => {
   await page.goto(SITE);
   await login('sara@example.com');
   await page.waitForSelector('#vPortal:not(.hide)');
-  await page.waitForSelector('#fCourse option[value="persuasion-influence"]', { state: 'attached' });
-  await page.selectOption('#fCourse', 'persuasion-influence');
+  await page.waitForSelector('#courseList input[value="persuasion-influence"]');
+  await page.check('#courseList input[value="persuasion-influence"]');
   await page.fill('#fNameAr', 'سارة أحمد الحربي');
   await page.fill('#fNameEn', 'Sara Ahmed Al-Harbi');
   await page.fill('#fPlatformEmail', 'sara.platform@example.com');
@@ -87,7 +87,7 @@ const server = http.createServer((req, res) => {
   await page.waitForFunction(() => /وصل طلبك/.test(document.querySelector('#pMsg').textContent));
   assert.match(await page.textContent('#pMsg'), /يومين إلى ثلاثة أيام عمل/);
   // طلب مكرر
-  await page.selectOption('#fCourse', 'persuasion-influence');
+  await page.check('#courseList input[value="persuasion-influence"]');
   await page.fill('#fNameAr', 'سارة أحمد الحربي');
   await page.fill('#fNameEn', 'Sara Ahmed Al-Harbi');
   await page.fill('#fPlatformEmail', 'sara.platform@example.com');

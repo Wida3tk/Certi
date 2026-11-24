@@ -70,6 +70,14 @@ button.busy::before { content: ''; position: absolute; inset-inline-start: 14px;
 .msg.ok { display: block; background: var(--ok-bg); color: var(--ok); }
 .msg.err { display: block; background: var(--err-bg); color: var(--err); }
 .msg.info { display: block; background: var(--info-bg); color: var(--blue); }
+.course-list { margin-top: 8px; max-height: 340px; overflow-y: auto; border: 1px solid #CDD3E1; border-radius: 12px; padding: 6px; background: #fff; }
+.course-item { display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 9px 10px; border-radius: 10px; font-weight: 500; font-size: 15px; cursor: pointer; }
+.course-item:hover { background: #F3F6FF; }
+.course-item input { width: 18px; height: 18px; margin-top: 4px; flex: none; accent-color: var(--blue); }
+.course-item:has(input:checked) { background: #EEF2FF; color: var(--navy); }
+.course-group { font-size: 13px; color: var(--muted); font-weight: 600; padding: 10px 10px 4px; }
+#courseCount { margin-top: 6px; min-height: 1.4em; }
+.msg { white-space: pre-line; }
 .warnbox { background: var(--warn-bg); color: var(--warn); border-radius: 12px; padding: 10px 14px; font-size: 14px; margin-top: 8px; }
 .errbox { background: var(--err-bg); color: var(--err); border-radius: 12px; padding: 10px 14px; font-size: 14px; margin-top: 8px; font-weight: 600; }
 

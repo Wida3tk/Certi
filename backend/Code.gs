@@ -72,7 +72,7 @@ function appUrl_() { return String(setting_('APP_URL')).replace(/\/?$/, '/'); }
 const TABS = { REQ: 'الطلبات', SURVEY: 'الرضا' };
 const REQ_HEADERS = [
   'رقم الطلب', 'تاريخ الطلب', 'الاسم بالإنجليزي', 'الاسم بالعربي', 'البريد', 'البريد في المنصة', 'الجوال', 'المدينة',
-  'معرّف الدورة', 'اسم الدورة', 'اسم الدورة (EN)', 'نوع البرنامج',
+  'معرّف الدورة', 'اسم الدورة', 'اسم الدورة (EN)', 'نوع البرنامج', 'رقم المجموعة',
   'الحالة', 'تاريخ البدء', 'تاريخ الإتمام', 'رقم الشهادة', 'ملف الشهادة', 'تاريخ الإصدار',
   'اعتمدها', 'ملاحظات',
 ];
@@ -412,6 +412,8 @@ const NAME_EN_RE = /^[A-Za-zÀ-ɏ][A-Za-zÀ-ɏ .'\-]{1,79}$/;
 const NAME_AR_RE = /^[؀-ۿ][؀-ۿ\s]{1,79}$/;
 const clean_ = s => String(s || '').replace(/\s+/g, ' ').trim();
 
+/** طلب شهادة لدورة أو أكثر في نموذج واحد. كل دورة = طلب مستقل يُراجَع ويُعتمد أو يُرفض وحده، وتجمعها «رقم المجموعة» */
+const MAX_COURSES_PER_REQUEST = 15;
 function submitRequest(token, d) {
   const email = who_(token);
   d = d || {};
@@ -424,8 +426,13 @@ function submitRequest(token, d) {
   if (!city) throw new Error('اكتب المدينة.');
   const phone = String(d.phone || '').replace(/[\s\-()]/g, '');
   if (!/^\+?\d{8,15}$/.test(phone)) throw new Error('اكتب رقم الجوال (أرقام فقط، مثال: 0501234567 أو +966501234567).');
-  const course = activeCourses_().filter(c => c.id === String(d.courseId))[0];
-  if (!course) throw new Error('اختر الدورة.');
+  const wanted = (Array.isArray(d.courseIds) ? d.courseIds : [d.courseId]).map(String).filter(Boolean)
+    .filter((x, i, a) => a.indexOf(x) === i);
+  if (!wanted.length) throw new Error('اختر الدورة.');
+  if (wanted.length > MAX_COURSES_PER_REQUEST) throw new Error('يمكن طلب ' + MAX_COURSES_PER_REQUEST + ' شهادة كحد أقصى في الطلب الواحد.');
+  const active = activeCourses_();
+  const courses = wanted.map(id => active.filter(c => c.id === id)[0]);
+  if (courses.some(c => !c)) throw new Error((courses.length > 1 ? 'إحدى الدورات المختارة' : 'الدورة المختارة') + ' غير متاحة. حدّث الصفحة واختر من جديد.');
   if (!Array.isArray(d.survey) || d.survey.length !== CONFIG.SURVEY.length ||
     d.survey.some((v, i) => !(Number(v) >= 1 && Number(v) <= CONFIG.SURVEY[i].max && Number(v) % 1 === 0)))
     throw new Error('أكمل جميع أسئلة استبيان الرضا.');
@@ -433,39 +440,52 @@ function submitRequest(token, d) {
 
   const lock = LockService.getScriptLock(); lock.waitLock(20000);
   try {
-    const dup = rows_(TABS.REQ).filter(r => cleanEmail_(r['البريد']) === email &&
-      String(r['معرّف الدورة']) === course.id && [ST.PENDING, ST.ISSUED].indexOf(r['الحالة']) >= 0)[0];
-    if (dup) throw new Error(dup['الحالة'] === ST.ISSUED
-      ? 'شهادة هذه الدورة صادرة لك مسبقاً، تجدها في «شهاداتي».'
-      : 'لديك طلب لهذه الدورة قيد المراجعة، لا حاجة لتقديم طلب جديد.');
-
-    const id = 'REQ-' + Utilities.formatDate(new Date(), tz_(), 'yyMMdd') + '-' +
-      Utilities.getUuid().replace(/-/g, '').slice(0, 5).toUpperCase();
-    appendObj_(TABS.REQ, REQ_HEADERS, {
-      'رقم الطلب': id, 'تاريخ الطلب': now_(), 'الاسم بالإنجليزي': safe_(nameEn, 80), 'الاسم بالعربي': safe_(nameAr, 80),
-      'البريد': email, 'البريد في المنصة': safe_(platformEmail, 200), 'الجوال': safe_(phone, 20), 'المدينة': safe_(city, 60),
-      'معرّف الدورة': course.id, 'اسم الدورة': course.nameAr, 'اسم الدورة (EN)': course.name,
-      'نوع البرنامج': TYPE_LABEL[course.type],
-      'الحالة': ST.PENDING,
+    const mine = rows_(TABS.REQ).filter(r => cleanEmail_(r['البريد']) === email && [ST.PENDING, ST.ISSUED].indexOf(r['الحالة']) >= 0);
+    const skipped = [], fresh = [];
+    courses.forEach(c => {
+      const dup = mine.filter(r => String(r['معرّف الدورة']) === c.id)[0];
+      if (dup) skipped.push({ course: c.nameAr, reason: dup['الحالة'] === ST.ISSUED ? 'صادرة لك مسبقاً، تجدها في «شهاداتي»' : 'لديك طلب لها قيد المراجعة' });
+      else fresh.push(c);
     });
-    const s = {}; s['رقم الطلب'] = id; s['التاريخ'] = now_(); s['البريد'] = email; s['الدورة'] = course.nameAr;
-    CONFIG.SURVEY.forEach((x, i) => s[x.q] = Number(d.survey[i]));
-    s[CONFIG.SURVEY_COMMENT] = safe_(d.comment, 2000);
-    appendObj_(TABS.SURVEY, SURVEY_HEADERS, s);
+    if (!fresh.length) {
+      if (skipped.length === 1) throw new Error(skipped[0].reason.indexOf('صادرة') === 0
+        ? 'شهادة هذه الدورة صادرة لك مسبقاً، تجدها في «شهاداتي».' : 'لديك طلب لهذه الدورة قيد المراجعة، لا حاجة لتقديم طلب جديد.');
+      throw new Error('كل الدورات المختارة إما صادرة لك أو قيد المراجعة:\n' + skipped.map(x => '• ' + x.course + ': ' + x.reason).join('\n'));
+    }
+    const stamp = Utilities.formatDate(new Date(), tz_(), 'yyMMdd');
+    const group = fresh.length > 1 ? 'GRP-' + stamp + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 5).toUpperCase() : '';
+    const ids = fresh.map(c => {
+      const id = 'REQ-' + stamp + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 5).toUpperCase();
+      appendObj_(TABS.REQ, REQ_HEADERS, {
+        'رقم الطلب': id, 'تاريخ الطلب': now_(), 'الاسم بالإنجليزي': safe_(nameEn, 80), 'الاسم بالعربي': safe_(nameAr, 80),
+        'البريد': email, 'البريد في المنصة': safe_(platformEmail, 200), 'الجوال': safe_(phone, 20), 'المدينة': safe_(city, 60),
+        'معرّف الدورة': c.id, 'اسم الدورة': c.nameAr, 'اسم الدورة (EN)': c.name,
+        'نوع البرنامج': TYPE_LABEL[c.type], 'رقم المجموعة': group,
+        'الحالة': ST.PENDING,
+      });
+      // الاستبيان: نفس الإجابات تُسجَّل لكل دورة حتى تبقى إحصاءات كل دورة صحيحة
+      const sv = {}; sv['رقم الطلب'] = id; sv['التاريخ'] = now_(); sv['البريد'] = email; sv['الدورة'] = c.nameAr;
+      CONFIG.SURVEY.forEach((x, i) => sv[x.q] = Number(d.survey[i]));
+      sv[CONFIG.SURVEY_COMMENT] = safe_(d.comment, 2000);
+      appendObj_(TABS.SURVEY, SURVEY_HEADERS, sv);
+      return id;
+    });
     try {
+      const list = fresh.map((c, i) => '<li><b>' + esc_(c.nameAr) + '</b> <span dir="ltr" style="color:#888;font-size:12px">(' + ids[i] + ')</span></li>').join('');
       sendMail_({
         to: email,
-        subject: 'استلمنا طلب شهادتك | ' + course.nameAr,
+        subject: 'استلمنا طلب ' + (fresh.length > 1 ? fresh.length + ' شهادات' : 'شهادتك | ' + fresh[0].nameAr),
         htmlBody: shell_('استلمنا طلبك',
           '<p>مرحباً ' + esc_(nameAr) + '،</p>' +
-          '<p>وصلنا طلب شهادة <b>' + esc_(course.nameAr) + '</b> (رقم الطلب <span dir="ltr">' + id + '</span>).</p>' +
+          '<p>وصلنا طلب ' + (fresh.length > 1 ? 'الشهادات التالية' : 'الشهادة التالية') + ':</p><ul style="padding-right:20px">' + list + '</ul>' +
           '<p style="background:#EEF4FB;padding:12px 16px;border-radius:8px">تُصدر الشهادة خلال ' + CONFIG.ISSUE_DAYS +
-          '، علماً بأن يومي الجمعة والسبت عطلة رسمية. ستصلك على بريدك هذا، وتجدها أيضاً في «شهاداتي».</p>' +
+          '، علماً بأن يومي الجمعة والسبت عطلة رسمية. ' + (fresh.length > 1 ? 'تُراجَع كل شهادة على حدة، وتصلك كل واحدة فور اعتمادها' : 'ستصلك على بريدك هذا') +
+          '، وتجدها أيضاً في «شهاداتي».</p>' +
           '<p>الاسم كما سيظهر على الشهادة: <b dir="ltr">' + esc_(nameEn) + '</b></p>' +
           '<p style="color:#666;font-size:13px">إذا كان في الاسم خطأ، يُرجى الرد على هذه الرسالة قبل إصدار الشهادة؛ فتعديل الاسم بعد الإصدار يترتب عليه رسوم إضافية.</p>'),
       });
     } catch (e) { console.error('confirm mail: ' + e); }
-    return { id: id, requests: getMyData(token).requests };
+    return { id: ids[0], ids: ids, group: group, skipped: skipped, requests: getMyData(token).requests };
   } finally { lock.releaseLock(); }
 }
 
@@ -501,7 +521,7 @@ function reqView_(r) {
     type: r['نوع البرنامج'], minDays: c ? c.minDays : 0,
     date: String(r['تاريخ الطلب']).slice(0, 10), status: r['الحالة'],
     start: r['تاريخ البدء'], end: r['تاريخ الإتمام'], certNo: r['رقم الشهادة'], note: r['ملاحظات'],
-    approvedBy: r['اعتمدها'], issued: r['تاريخ الإصدار'],
+    approvedBy: r['اعتمدها'], issued: r['تاريخ الإصدار'], group: r['رقم المجموعة'] || '',
   };
 }
 function adminList(token) {

@@ -27,12 +27,25 @@ function renderList() {
     '<table><tr><th>التاريخ</th><th>الاسم</th><th>الدورة</th><th>الحالة</th></tr>' +
     l.map(r => '<tr class="click" data-id="' + esc(r.id) + '"><td dir="ltr" style="text-align:right">' + esc(r.date) + '</td><td>' +
       esc(r.nameAr || '') + '<div dir="ltr" style="text-align:right">' + esc(r.nameEn) + '</div><div class="hint" dir="ltr" style="text-align:right">' + esc(r.email) + '</div></td><td>' + esc(r.course) +
-      (r.type ? '<div class="hint">' + esc(r.type) + '</div>' : '') + '</td><td>' + pill(r.status) +
+      (r.type ? '<div class="hint">' + esc(r.type) + '</div>' : '') +
+      (r.group ? '<div class="hint">🗂️ ضمن طلب مجمّع (' + ALL.filter(x => x.group === r.group).length + ')</div>' : '') + '</td><td>' + pill(r.status) +
       (r.certNo ? '<div class="hint" dir="ltr" style="text-align:right">' + esc(r.certNo) + '</div>' : '') + '</td></tr>').join('') + '</table>';
   document.querySelectorAll('tr.click').forEach(tr => tr.onclick = () => openReq(tr.dataset.id));
 }
 $('bCloseD').onclick = () => { $('aDetail').classList.add('hide'); $('aListCard').classList.remove('hide'); $('aTabs').classList.remove('hide'); loadAdmin(); };
 
+/** طلب مجمّع: بقية الدورات التي طلبها المتدرب في النموذج نفسه */
+function groupInfo(r) {
+  if (!r.group) return '';
+  const sib = ALL.filter(x => x.group === r.group && x.id !== r.id);
+  if (!sib.length) return '';
+  return '<div class="tag" style="margin-top:8px">ضمن طلب مجمّع (' + (sib.length + 1) + ' دورات). البقية: ' +
+    sib.map(x => '<a href="#" data-open="' + esc(x.id) + '">' + esc(x.course) + '</a> ' + pill(x.status)).join('، ') + '</div>';
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-open]'); if (!a) return;
+  e.preventDefault(); openReq(a.dataset.open);
+});
 function setSrc(id, text, none) { $(id).textContent = text; $(id).classList.toggle('none', !!none); }
 
 /** بعد أي إجراء: تحديث القائمة من الخادم ثم إعادة فتح الطلب بحالته الجديدة */
@@ -43,7 +56,7 @@ async function refreshAndOpen(id) {
 async function openReq(id) {
   $('aListCard').classList.add('hide'); $('aTabs').classList.add('hide'); $('aDetail').classList.remove('hide');
   $('dTitle').textContent = 'جارٍ التحميل...'; $('prev').innerHTML = ''; $('dActs').innerHTML = '';
-  $('dRej').classList.add('hide'); $('dReason').value = ''; $('dInfo').innerHTML = '';
+  $('dRej').classList.add('hide'); $('dReason').value = ''; $('dPreset').value = ''; $('dInfo').innerHTML = '';
   clearMsg($('dMsg')); GEN = null; CUR = null;
   try {
     // الطلب موجود في القائمة المحمّلة: يُفتح فوراً بلا رحلة للخادم
@@ -63,7 +76,7 @@ async function openReq(id) {
       row('النوع', r.type) + (r.minDays ? '<div class="tag none">شرط الإصدار: مدة إتمام ' + r.minDays + ' أيام على الأقل</div>' : '') +
       row('البريد', r.email, true) + row('بريد المنصة', r.platformEmail, true) + row('الجوال', r.phone, true) + row('المدينة', r.city) +
       row('رقم الطلب', r.id, true) + row('تاريخ الطلب', r.date, true) + row('رقم الشهادة', r.certNo, true) +
-      row('آخر إجراء بواسطة', r.approvedBy, true) + row('ملاحظات', r.note);
+      row('آخر إجراء بواسطة', r.approvedBy, true) + row('ملاحظات', r.note) + groupInfo(r);
     checkDays();
     const canGen = r.status === ST.PENDING || r.status === ST.ISSUED;
     $('bGen').classList.toggle('hide', !canGen);
@@ -107,6 +120,7 @@ function checkDays() {
 ['dNameEn', 'dStart', 'dEnd'].forEach(i => $(i).addEventListener('input', () => {
   if (GEN) { GEN = null; $('prev').innerHTML = ''; renderActs(); msg($('dMsg'), 'تغيّرت البيانات — أعيدي التوليد.', 'info'); }
 }));
+$('dPreset').onchange = () => { if ($('dPreset').value) { $('dReason').value = $('dPreset').value; $('dReason').focus(); } };
 $('bRejGo').onclick = async () => {
   const b = $('bRejGo'); busy(b, true);
   try { const t = await api('adminReject', { token: SESSION.token, id: CUR.id, reason: $('dReason').value }); await refreshAndOpen(CUR.id); msg($('dMsg'), t, 'ok'); }

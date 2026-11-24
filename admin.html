@@ -88,7 +88,17 @@
     <div id="prev" style="margin-top:16px"></div>
     <div class="actions" id="dActs"></div>
     <div id="dRej" class="hide">
-      <label for="dReason">سبب الرفض <span class="hint">(يصل للمتدرب بالإيميل ويظهر له في «شهاداتي»)</span></label><textarea id="dReason"></textarea>
+      <label for="dPreset">سبب الرفض <span class="hint">(يصل للمتدرب بالإيميل ويظهر له في «شهاداتي»)</span></label>
+      <select id="dPreset">
+        <option value="">— اختاري سبباً جاهزاً أو اكتبي سبباً آخر —</option>
+        <option>اسم الدورة غير مطابق للدورات المشترك فيها.</option>
+        <option>لم يكتمل إتمام الدورة في المنصة بعد. يُرجى إكمالها ثم تقديم طلب جديد.</option>
+        <option>البريد الإلكتروني المستخدم في المنصة غير مسجّل لدينا. يُرجى التأكد منه وتقديم طلب جديد.</option>
+        <option>مدة إتمام الدورة أقل من المدة المشروطة لإصدار هذه الشهادة.</option>
+        <option>الاسم بالإنجليزية غير مكتوب بشكل صحيح أو غير مكتمل. يُرجى تقديم طلب جديد بالاسم الصحيح.</option>
+        <option>الطلب مكرر، وقد صدرت الشهادة سابقاً.</option>
+      </select>
+      <textarea id="dReason" placeholder="يمكنك تعديل النص أو كتابة سبب آخر" style="margin-top:8px"></textarea>
       <div class="actions"><button class="danger" id="bRejGo">تأكيد الرفض</button></div>
     </div>
     <div id="dMsg" class="msg" role="alert"></div>

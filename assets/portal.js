@@ -48,10 +48,7 @@ async function loadPortal(preloaded) {
     SURVEY = d.survey; ANS = SURVEY.map(() => 0); COURSES = d.courses;
     document.querySelectorAll('.issueDays').forEach(e => e.textContent = d.issueDays);
     $('commentLabel').textContent = d.surveyComment;
-    const opts = list => list.map(c => '<option value="' + esc(c.id) + '">' + esc(c.nameAr) + '</option>').join('');
-    const shorts = d.courses.filter(c => c.type !== 'long'), longs = d.courses.filter(c => c.type === 'long');
-    $('fCourse').innerHTML = '<option value="">— اختر الدورة أو البرنامج —</option>' +
-      (longs.length ? '<optgroup label="الدورات القصيرة">' + opts(shorts) + '</optgroup><optgroup label="البرامج الطويلة">' + opts(longs) + '</optgroup>' : opts(shorts));
+    renderCourses();
     let sec = '';
     $('survey').innerHTML = SURVEY.map((x, i) => {
       const head = x.section !== sec ? '<h3>' + esc(sec = x.section) + '</h3>' : '';
@@ -82,11 +79,34 @@ function renderMine(list) {
   });
 }
 
-$('fCourse').onchange = () => {
-  const c = COURSES.filter(x => x.id === $('fCourse').value)[0];
-  $('courseRule').classList.toggle('hide', !(c && c.minDays));
-  if (c && c.minDays) $('courseRule').textContent = '⚠️ يُشترط لإصدار هذه الشهادة ألا تقل مدة الإتمام عن ' + c.minDays + ' أيام، ولا تُصدر إذا كانت أقل من ذلك.';
-};
+/* ---------- اختيار دورة أو أكثر ---------- */
+const PICKED = new Set();
+function renderCourses() {
+  const item = c => '<label class="course-item"><input type="checkbox" value="' + esc(c.id) + '"' + (PICKED.has(c.id) ? ' checked' : '') + '><span>' + esc(c.nameAr) + '</span></label>';
+  const shorts = COURSES.filter(c => c.type !== 'long'), longs = COURSES.filter(c => c.type === 'long');
+  $('courseList').innerHTML = longs.length
+    ? '<div class="course-group">الدورات القصيرة</div>' + shorts.map(item).join('') + '<div class="course-group">البرامج الطويلة</div>' + longs.map(item).join('')
+    : shorts.map(item).join('');
+  filterCourses(); updatePicked();
+}
+function filterCourses() {
+  const q = $('courseSearch').value.trim();
+  document.querySelectorAll('#courseList .course-item').forEach(el => el.classList.toggle('hide', !!q && el.textContent.indexOf(q) < 0));
+}
+function updatePicked() {
+  const sel = COURSES.filter(c => PICKED.has(c.id));
+  $('courseCount').textContent = sel.length ? 'اخترت ' + (sel.length === 1 ? 'دورة واحدة' : sel.length + ' دورات') : '';
+  const ruled = sel.filter(c => c.minDays);
+  $('courseRule').classList.toggle('hide', !ruled.length);
+  if (ruled.length) $('courseRule').textContent = '⚠️ ' + ruled.map(c => '«' + c.nameAr + '»').join('، ') +
+    ': يُشترط لإصدار الشهادة ألا تقل مدة الإتمام عن ' + ruled[0].minDays + ' أيام، ولا تُصدر إذا كانت أقل من ذلك.';
+}
+$('courseList').addEventListener('change', e => {
+  if (!e.target.matches('input[type=checkbox]')) return;
+  e.target.checked ? PICKED.add(e.target.value) : PICKED.delete(e.target.value);
+  updatePicked();
+});
+$('courseSearch').addEventListener('input', filterCourses);
 
 const NAME_RE = /^[A-Za-zÀ-ɏ][A-Za-zÀ-ɏ .'\-]{1,79}$/;
 const NAME_AR_RE = /^[\u0600-\u06FF][\u0600-\u06FF\s]{1,79}$/;
@@ -95,7 +115,7 @@ $('bSubmit').onclick = async () => {
   try {
     const v = id => $(id).value.replace(/\s+/g, ' ').trim();
     const nameEn = v('fNameEn'), nameAr = v('fNameAr');
-    if (!$('fCourse').value) throw new Error('اختر الدورة.');
+    if (!PICKED.size) throw new Error('اختر الدورة (أو الدورات) التي أتممتها.');
     if (!NAME_AR_RE.test(nameAr)) throw new Error('اكتب اسمك الثلاثي بالعربية.');
     if (!nameEn) throw new Error('اكتب اسمك بالإنجليزية كما تريده على الشهادة.');
     if (!NAME_RE.test(nameEn)) throw new Error('الاسم يُكتب بالحروف الإنجليزية فقط (مثال: Sara Ahmed Al-Harbi).');
@@ -107,24 +127,26 @@ $('bSubmit').onclick = async () => {
     if (!v('fComment')) throw new Error('اكتب ملاحظاتك أو مقترحاتك في آخر الاستبيان.');
     if (!confirm('سيُطبع اسمك على الشهادة هكذا:\n\n' + nameEn + '\n\nهل الكتابة صحيحة؟')) return;
     busy(b, true); msg($('pMsg'), 'جارٍ إرسال الطلب...', 'info');
-    const courseId = $('fCourse').value;
-    let id, requests = null;
+    const courseIds = COURSES.filter(c => PICKED.has(c.id)).map(c => c.id);
+    let ids = [], requests = null, skipped = [];
     try {
-      const res = await api('submitRequest', { token: SESSION.token, data: { courseId: courseId, nameEn: nameEn, nameAr: nameAr,
+      const res = await api('submitRequest', { token: SESSION.token, data: { courseIds: courseIds, nameEn: nameEn, nameAr: nameAr,
         platformEmail: v('fPlatformEmail'), city: v('fCity'), phone: phone, survey: ANS, comment: $('fComment').value } });
-      id = res.id; requests = res.requests;
+      ids = res.ids || [res.id]; requests = res.requests; skipped = res.skipped || [];
     } catch (err) {
       // انقطع الاتصال بعد وصول الطلب؟ نتحقق من «شهاداتي» قبل إظهار خطأ
       if (!/الاتصال|رد غير متوقع/.test(err.message)) throw err;
       const d = await api('getMyData', { token: SESSION.token }).catch(() => null);
-      const name = (COURSES.filter(c => c.id === courseId)[0] || {}).nameAr;
-      const got = d && d.requests.filter(r => r.status === ST.PENDING && r.course === name)[0];
-      if (!got) throw err;
-      id = got.id; requests = d.requests;
+      const names = COURSES.filter(c => PICKED.has(c.id)).map(c => c.nameAr);
+      const got = d ? d.requests.filter(r => r.status === ST.PENDING && names.indexOf(r.course) >= 0) : [];
+      if (!got.length) throw err;
+      ids = got.map(r => r.id); requests = d.requests;
     }
-    msg($('pMsg'), 'وصل طلبك (رقم ' + id + '). تُصدر الشهادة خلال ' + document.querySelector('.issueDays').textContent +
-      ' وتصلك على بريدك، وتجدها أيضاً في «شهاداتي».', 'ok');
-    ['fNameEn', 'fNameAr', 'fPlatformEmail', 'fCity', 'fPhone', 'fComment'].forEach(i => $(i).value = ''); $('fCourse').value = ''; $('fCourse').onchange();
+    msg($('pMsg'), (ids.length > 1 ? 'وصل طلبك لـ ' + ids.length + ' شهادات' : 'وصل طلبك (رقم ' + ids[0] + ')') + '. تُصدر الشهادة خلال ' +
+      document.querySelector('.issueDays').textContent + ' وتصلك على بريدك، وتجدها أيضاً في «شهاداتي».' +
+      (skipped.length ? '\nلم يُضف: ' + skipped.map(x => x.course + ' (' + x.reason + ')').join('، ') : ''), 'ok');
+    ['fNameEn', 'fNameAr', 'fPlatformEmail', 'fCity', 'fPhone', 'fComment', 'courseSearch'].forEach(i => $(i).value = '');
+    PICKED.clear(); renderCourses();
     ANS = ANS.map(() => 0);
     document.querySelectorAll('.rate button').forEach(x => x.classList.remove('on'));
     if (requests) renderMine(requests);

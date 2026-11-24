@@ -340,4 +340,33 @@ test('تذكّرني: جلسة موقّعة 30 يوماً، لا تُزوَّر 
   assert.strictEqual(env.api('adminList', { token: tok }).ok, false);
 });
 
+test('طلب عدة شهادات مرة واحدة: طلب مستقل لكل دورة، مجموعة واحدة، المكرر يُتخطّى، إيميل واحد', () => {
+  const env = fresh();
+  const t = login(env, 'm@x.com');
+  // واحدة موجودة مسبقاً
+  env.api('submitRequest', { token: t, data: form() });
+  env.mails.length = 0;
+  const r = env.api('submitRequest', { token: t, data: form({ courseId: undefined, courseIds: ['persuasion-influence', 'specialist', 'specialist'] }) });
+  assert.strictEqual(r.ok, true, r.error);
+  assert.strictEqual(r.data.ids.length, 1, 'duplicate in list + already pending skipped');
+  assert.strictEqual(r.data.skipped.length, 1); assert.match(r.data.skipped[0].reason, /قيد المراجعة/);
+  assert.strictEqual(env.mails.length, 1);
+  // جديدان معاً ← مجموعة
+  env.ctx.CacheService.getScriptCache().remove('courses');
+  const t2 = login(env, 'n@x.com');
+  const r2 = env.api('submitRequest', { token: t2, data: form({ courseIds: ['persuasion-influence', 'specialist'] }) }).data;
+  assert.strictEqual(r2.ids.length, 2); assert.match(r2.group, /^GRP-/);
+  assert.strictEqual(r2.requests.length, 2);
+  const ta = adminLogin(env, ADMIN);
+  const l = env.api('adminList', { token: ta }).data.filter(x => x.email === 'n@x.com');
+  assert.strictEqual(l.length, 2); assert.strictEqual(l[0].group, l[1].group);
+  // رفض واحدة واعتماد الأخرى مستقلان
+  assert.strictEqual(env.api('adminReject', { token: ta, id: r2.ids[0], reason: 'اسم الدورة غير مطابق للدورات المشترك فيها' }).ok, true);
+  assert.strictEqual(env.api('adminGet', { token: ta, id: r2.ids[1] }).data.status, 'بانتظار المراجعة');
+  // كلها مكررة ← خطأ واضح
+  assert.match(env.api('submitRequest', { token: t2, data: form({ courseIds: ['specialist'] }) }).error, /قيد المراجعة/);
+  // الحد الأقصى
+  assert.match(env.api('submitRequest', { token: t2, data: form({ courseIds: Array.from({ length: 16 }, (_, i) => 'c' + i) }) }).error, /15/);
+});
+
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));
