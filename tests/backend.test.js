@@ -445,4 +445,85 @@ test('توحيد الاسم الإنجليزي: أول حرف كبير والب�
   assert.strictEqual(env.api('adminList', { token: ta }).data[0].nameEn, 'Reem Abdukariri');
 });
 
+test('المخالصة المالية: المالية ← التوقيع ← PDF + سجل ← إطلاق الشهادة المعلّقة تلقائياً', () => {
+  const courses = JSON.stringify([
+    { id: 'persuasion-influence', nameAr: 'فن الإقناع والتأثير', name: 'Persuasion', type: 'short', active: true },
+    { id: 'obm-c', nameAr: 'رخصة الاستشاري OBM-C', name: 'OBM-C', type: 'long', clearance: true, active: true }]);
+  const env = createEnv({ coursesJson: courses }); env.ctx.setup();
+  const t = login(env, 'l@x.com');
+  env.mails.length = 0;
+  const id = env.api('submitRequest', { token: t, data: form({ courseIds: ['obm-c'] }) }).data.id;
+  assert.ok(env.mails.some(m => m.to === 'raljalajil@sulukera.com' && /مخالصة/.test(m.subject)), 'finance notified');
+  const ta = adminLogin(env, ADMIN);
+  let g = env.api('adminGet', { token: ta, id }).data;
+  assert.strictEqual(g.clearance, 'بانتظار المالية');
+  // المتدرب لا يرى المخالصة قبل جاهزيتها
+  assert.match(env.api('clearanceView', { token: t, id }).error, /غير جاهزة/);
+  // اعتماد الشهادة قبل المخالصة ← تُحفظ ولا تُرسل
+  const num = env.api('adminReserveNumber', { token: ta, id }).data;
+  env.mails.length = 0;
+  const ap = env.api('adminApprove', { token: ta, data: { id, certNo: num.certNo, pdf: PDF, start: '2026-01-01', end: '2026-11-20' } });
+  assert.strictEqual(ap.ok, true, ap.error); assert.match(ap.data, /تلقائياً/);
+  assert.strictEqual(env.mails.length, 0, 'certificate held, no email');
+  assert.strictEqual(env.api('adminGet', { token: ta, id }).data.status, 'معتمدة بانتظار المخالصة');
+  assert.strictEqual(env.api('verify', { certNo: num.certNo }).data.status, 'notfound', 'held cert not public yet');
+  // يوجد مبلغ ← بانتظار السداد
+  assert.strictEqual(env.api('adminClearance', { token: ta, id, data: { outcome: 'due' } }).ok, true);
+  assert.strictEqual(env.api('adminGet', { token: ta, id }).data.clearance, 'بانتظار السداد');
+  // تم السداد بلا بيانات ← خطأ، ثم ببيانات ← بانتظار التوقيع وإيميل للمتدرب
+  assert.match(env.api('adminClearance', { token: ta, id, data: { outcome: 'paid' } }).error, /أكملي/);
+  const cd = { outcome: 'paid', program: 'برنامج OBM-C', hours: '72 ساعة', total: 'SR 3957.15', start: '2025-10-21', clearDate: '2026-11-18' };
+  env.mails.length = 0;
+  const cr = env.api('adminClearance', { token: ta, id, data: cd });
+  assert.strictEqual(cr.ok, true, cr.error); assert.match(cr.data, /CLR-/);
+  assert.ok(env.mails.some(m => m.to === 'l@x.com' && /جاهزة للتوقيع/.test(m.subject)));
+  // متدرب آخر لا يرى ولا يوقّع
+  const t2 = login(env, 'other@x.com');
+  assert.strictEqual(env.api('clearanceView', { token: t2, id }).ok, false);
+  // المتدرب يطّلع
+  const v = env.api('clearanceView', { token: t, id }).data;
+  assert.strictEqual(v.total, 'SR 3957.15'); assert.strictEqual(v.name, 'سارة أحمد الحربي'); assert.strictEqual(v.text.length, 3);
+  assert.strictEqual(env.api('getMyData', { token: t }).data.requests[0].clearance, 'بانتظار التوقيع');
+  // توقيع بلا إقرار / بلا رسم ← يُرفض
+  const sig = 'data:image/png;base64,' + Buffer.alloc(2000, 7).toString('base64');
+  assert.match(env.api('clearanceSign', { token: t, id, data: { agree: false, signature: sig } }).error, /الإقرار/);
+  assert.match(env.api('clearanceSign', { token: t, id, data: { agree: true, signature: 'x' } }).error, /توقيعك/);
+  // التوقيع ← PDF في Drive، نسخ للمتدرب والمالية، والشهادة المعلّقة تُرسل
+  env.mails.length = 0;
+  const sres = env.api('clearanceSign', { token: t, id, data: { agree: true, signature: sig, ua: 'Test Browser' } });
+  assert.strictEqual(sres.ok, true, sres.error);
+  g = env.api('adminGet', { token: ta, id }).data;
+  assert.strictEqual(g.clearance, 'موقّعة'); assert.strictEqual(g.status, 'صادرة'); assert.ok(g.clearanceFile);
+  assert.ok(env.mails.some(m => m.to === 'l@x.com' && /الموقّعة/.test(m.subject) && m.attachments));
+  assert.ok(env.mails.some(m => m.to === 'raljalajil@sulukera.com' && /تم توقيع/.test(m.subject)));
+  assert.ok(env.mails.some(m => m.to === 'l@x.com' && /🎓/.test(m.subject)), 'held certificate released');
+  assert.strictEqual(env.api('verify', { certNo: num.certNo }).data.status, 'valid');
+  // المستند: البيانات + الإقرار + سجل التوقيع، والمستند المؤقت حُذف
+  const doc = Object.values(env.docs)[0];
+  const txt = doc.text.join('\n');
+  ['SR 3957.15', 'سارة أحمد الحربي', 'أقر وأؤكد', 'سجل التوقيع الإلكتروني', 'اطلاع المتدرب', 'Test Browser'].forEach(k => assert.ok(txt.includes(k), k));
+  assert.strictEqual(doc.trashed, true); assert.ok(doc.images >= 1);
+  // التحميل للمتدرب، والتوقيع مرة ثانية مرفوض
+  assert.strictEqual(Buffer.from(env.api('downloadMyClearance', { token: t, id }).data.data, 'base64').toString().slice(0, 4), '%PDF');
+  assert.match(env.api('clearanceSign', { token: t, id, data: { agree: true, signature: sig } }).error, /مسبقاً/);
+  // دورة بلا مخالصة لا تتأثر
+  const id2 = env.api('submitRequest', { token: t, data: form() }).data.id;
+  assert.strictEqual(env.api('adminGet', { token: ta, id: id2 }).data.clearance, '');
+  assert.match(env.api('adminClearance', { token: ta, id: id2, data: { outcome: 'nodue' } }).error, /لا يحتاج/);
+});
+
+test('طلب قائم قبل تفعيل المخالصة لبرنامجه يُعامل «بانتظار المالية»، والصادر قبلها لا يتأثر', () => {
+  const env = fresh();
+  const t = login(env, 'pre@x.com');
+  const id = env.api('submitRequest', { token: t, data: form() }).data.id;
+  const ta = adminLogin(env, ADMIN);
+  assert.strictEqual(env.api('adminGet', { token: ta, id }).data.clearance, '');
+  // تفعيل المخالصة للدورة لاحقاً
+  const list = JSON.parse(JSON.stringify(env.ctx.courses_())); list.find(c => c.id === 'persuasion-influence').clearance = true;
+  env.ctx.CacheService.getScriptCache().put('courses', JSON.stringify(list), 600);
+  assert.strictEqual(env.api('adminGet', { token: ta, id }).data.clearance, 'بانتظار المالية');
+  assert.strictEqual(env.api('getMyData', { token: t }).data.requests[0].clearance, 'بانتظار المالية');
+  assert.strictEqual(env.api('adminClearance', { token: ta, id, data: { outcome: 'due' } }).ok, true);
+});
+
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));

@@ -113,6 +113,15 @@ button.busy::before { content: ''; position: absolute; inset-inline-start: 14px;
 .toolbar-btns { display: flex; gap: 8px; flex: none; }
 .toolbar-btns button { white-space: nowrap; height: 46px; padding-block: 0; }
 @media (max-width: 560px) { .toolbar-btns { width: 100%; } .toolbar-btns button { flex: 1; } }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.sig-pad { width: 100%; max-width: 520px; height: 180px; display: block; background: #fff; border: 2px dashed #C3CBE0; border-radius: 14px; touch-action: none; cursor: crosshair; }
+.clr-doc { border: 1px solid var(--line); border-radius: 14px; padding: 22px; background: #fff; line-height: 1.9; }
+.clr-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+.clr-head img { height: 54px; }
+.clr-title { text-align: center; font-size: 22px; margin: 10px 0 6px; }
+.clr-doc h4 { margin: 14px 0 6px; color: var(--navy); }
+.clr-t th { width: 34%; background: #E8EEFB; color: var(--navy); font-weight: 600; }
+.clr-t th, .clr-t td { border: 1px solid #C9D3EA; padding: 8px 10px; }
 .tablewrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: right; padding: 12px 8px; border-bottom: 1px solid var(--line); font-size: 15px; vertical-align: middle; }

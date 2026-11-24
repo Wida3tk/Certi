@@ -56,7 +56,7 @@
 <section id="vAdmin" class="hide">
   <div class="tabs" id="aTabs">
     <button data-f="بانتظار المراجعة" class="on">بانتظار المراجعة<span class="count" id="cPending"></span></button>
-    <button data-f="صادرة">صادرة</button><button data-f="مرفوضة">مرفوضة</button><button data-f="ملغاة">ملغاة</button><button data-f="">الكل</button>
+    <button data-f="__clr">المخالصات<span class="count" id="cClr"></span></button><button data-f="صادرة">صادرة</button><button data-f="مرفوضة">مرفوضة</button><button data-f="ملغاة">ملغاة</button><button data-f="">الكل</button>
   </div>
   <div class="card" id="aListCard">
     <div class="toolbar">
@@ -97,6 +97,7 @@
         <div class="actions"><button id="bGen">توليد ومعاينة</button></div>
       </div>
     </div>
+    <div id="dClr" class="src hide" style="margin-top:16px;padding:16px"></div>
     <div id="prev" style="margin-top:16px"></div>
     <div class="actions" id="dActs"></div>
     <div id="dRej" class="hide">

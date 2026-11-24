@@ -47,7 +47,9 @@ function renderList() {
   const n = ALL.filter(r => r.status === ST.PENDING).length;
   $('cPending').textContent = n || ''; $('cPending').classList.toggle('hide', !n);
   const q = $('aSearch').value.trim().toLowerCase();
-  const l = ALL.filter(r => (!FILTER || r.status === FILTER) &&
+  const nc = ALL.filter(needsClr).length;
+  $('cClr').textContent = nc || ''; $('cClr').classList.toggle('hide', !nc);
+  const l = ALL.filter(r => (!FILTER || (FILTER === '__clr' ? needsClr(r) : r.status === FILTER)) &&
     (!q || [r.nameEn, r.nameAr, r.email, r.certNo, r.id, r.course].some(x => String(x || '').toLowerCase().includes(q))));
   $('aList').innerHTML = !l.length ? '<p class="hint">لا توجد طلبات.</p>' :
     '<table><tr><th>التاريخ</th><th>الاسم</th><th>الدورة</th><th>الحالة</th></tr>' +
@@ -55,11 +57,58 @@ function renderList() {
       esc(r.nameAr || '') + '<div dir="ltr" style="text-align:right">' + esc(r.nameEn) + '</div><div class="hint" dir="ltr" style="text-align:right">' + esc(r.email) + '</div></td><td>' + esc(r.course) +
       (r.type ? '<div class="hint">' + esc(r.type) + '</div>' : '') +
       (r.group ? '<div class="hint">🗂️ ضمن طلب مجمّع (' + ALL.filter(x => x.group === r.group).length + ')</div>' : '') + '</td><td>' + pill(r.status) +
+      (r.clearance ? '<div class="hint">المخالصة: ' + esc(r.clearance) + '</div>' : '') +
       (r.certNo ? '<div class="hint" dir="ltr" style="text-align:right">' + esc(r.certNo) + '</div>' : '') + '</td></tr>').join('') + '</table>';
   document.querySelectorAll('tr.click').forEach(tr => tr.onclick = () => openReq(tr.dataset.id));
 }
 $('bCloseD').onclick = () => { $('aDetail').classList.add('hide'); $('aListCard').classList.remove('hide'); $('aTabs').classList.remove('hide'); loadAdmin(); };
 
+/* ---------- المخالصة المالية (للمحاسب والفريق) ---------- */
+const needsClr = r => r.clearance && r.clearance !== CLR.SIGNED && [ST.REJECTED, ST.REVOKED].indexOf(r.status) < 0;
+const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+function renderClr(r) {
+  const box = $('dClr');
+  if (!r.clearance) { box.classList.add('hide'); box.innerHTML = ''; return; }
+  box.classList.remove('hide');
+  const c = r.clearanceData || {};
+  const head = '<b>المخالصة المالية</b> ' + pill(r.clearance) + (c.docId ? ' <span class="hint" dir="ltr">' + esc(c.docId) + '</span>' : '');
+  if (r.clearance === CLR.SIGNED) {
+    box.innerHTML = head + '<p class="hint" style="margin:6px 0">وقّعها المتدرب في ' + esc(r.clearanceSigned) + '.</p><button class="ghost" id="bClrDl">تحميل المخالصة الموقّعة</button>';
+    $('bClrDl').onclick = async () => { const b = $('bClrDl'); busy(b, true);
+      try { const f = await api('adminDownloadClearance', { token: SESSION.token, id: r.id }); downloadB64(f.name, f.data); } catch (e) { msg($('dMsg'), e.message, 'err'); } busy(b, false); };
+    return;
+  }
+  if (r.clearance === CLR.SIGN) {
+    box.innerHTML = head + '<p class="hint" style="margin:6px 0">أُرسلت للمتدرب ليوقّعها. البرنامج: ' + esc(c.program) + ' · الإجمالي: <span dir="ltr">' + esc(c.total) +
+      '</span></p><button class="ghost" id="bClrResend">إعادة إرسال رابط التوقيع</button>';
+    $('bClrResend').onclick = async () => { const b = $('bClrResend'); busy(b, true);
+      try { msg($('dMsg'), await api('adminClearanceResend', { token: SESSION.token, id: r.id }), 'ok'); } catch (e) { msg($('dMsg'), e.message, 'err'); } busy(b, false); };
+    return;
+  }
+  const v = (k, def) => esc(c[k] != null && c[k] !== '' ? c[k] : def || '');
+  box.innerHTML = head +
+    '<p class="hint" style="margin:6px 0 10px">أكملي بيانات المخالصة ثم اختاري النتيجة. عند «لا يوجد مبلغ» أو «تم السداد» تُرسل المخالصة للمتدرب ليوقّعها، وتُرسل شهادته تلقائياً بعد التوقيع إن كانت معتمدة.</p>' +
+    '<div class="row"><div><label for="cProg">البرنامج / الخدمة</label><input id="cProg" value="' + v('program', r.course) + '"></div>' +
+    '<div><label for="cHours">عدد الساعات</label><input id="cHours" value="' + v('hours') + '" placeholder="مثال: 72 ساعة"></div>' +
+    '<div><label for="cTotal">الإجمالي</label><input id="cTotal" dir="ltr" value="' + v('total') + '" placeholder="SR 3957.15"></div></div>' +
+    '<div class="row"><div><label for="cStart">تاريخ البدء</label><input id="cStart" type="date" value="' + v('start', r.start) + '"></div>' +
+    '<div><label for="cClear">تاريخ الإخلاء</label><input id="cClear" type="date" value="' + v('clearDate', today()) + '"></div><div></div></div>' +
+    '<div class="actions">' +
+      (r.clearance === CLR.DUE ? '<button class="ok" data-o="paid">تم السداد — إصدار المخالصة للتوقيع</button>'
+        : '<button class="ok" data-o="nodue">لا يوجد مبلغ مستحق — إصدار المخالصة للتوقيع</button><button class="ghost" data-o="due">يوجد مبلغ مستحق — بانتظار السداد</button>') +
+    '</div>';
+  box.querySelectorAll('[data-o]').forEach(b => b.onclick = async () => {
+    const o = b.dataset.o;
+    if (o !== 'due' && !confirm('ستُرسل المخالصة إلى ' + r.email + ' ليوقّعها. متابعة؟')) return;
+    busy(b, true);
+    try {
+      const m = await api('adminClearance', { token: SESSION.token, id: r.id, data: { outcome: o, program: $('cProg').value, hours: $('cHours').value,
+        total: $('cTotal').value, start: $('cStart').value, clearDate: $('cClear').value } });
+      await refreshAndOpen(r.id); msg($('dMsg'), m, 'ok');
+    } catch (e) { msg($('dMsg'), e.message, 'err'); }
+    busy(b, false);
+  });
+}
 /** طلب مجمّع: بقية الدورات التي طلبها المتدرب في النموذج نفسه */
 function groupInfo(r) {
   if (!r.group) return '';
@@ -98,7 +147,7 @@ async function openReq(id) {
     $('dTpl').innerHTML = tpls.map(t => '<option value="' + esc(t.dir) + '">' + esc(t.label || t.dir) + '</option>').join('');
     $('dTpl').value = tpls.some(t => t.dir === r.template) ? r.template : tpls[0].dir;
     $('dTplBox').classList.toggle('hide', tpls.length < 2);
-    if (r.status === ST.PENDING || r.status === ST.ISSUED) prefetchTpl();
+    if (r.status === ST.PENDING || r.status === ST.ISSUED || r.status === ST.HELD) prefetchTpl();
     $('dTitle').innerHTML = esc(r.nameAr || r.nameEn) + ' ' + pill(r.status);
     // الاسم يُعرض موحّداً (أول حرف كبير)، ويمكن تعديله يدوياً قبل التوليد
     $('dNameEn').value = titleName(r.nameEn || ''); $('dNameAr').value = r.nameAr || '';
@@ -114,8 +163,9 @@ async function openReq(id) {
       row('البريد', r.email, true) + row('بريد المنصة', r.platformEmail, true) + row('الجوال', r.phone, true) + row('المدينة', r.city) +
       row('رقم الطلب', r.id, true) + row('تاريخ الطلب', r.date, true) + row('رقم الشهادة', r.certNo, true) +
       row('آخر إجراء بواسطة', r.approvedBy, true) + row('ملاحظات', r.note) + groupInfo(r);
+    renderClr(r);
     checkDays();
-    const canGen = r.status === ST.PENDING || r.status === ST.ISSUED;
+    const canGen = r.status === ST.PENDING || r.status === ST.ISSUED || r.status === ST.HELD;
     $('bGen').classList.toggle('hide', !canGen);
     ['dNameEn', 'dStart', 'dEnd'].forEach(i => $(i).disabled = !canGen);
     renderActs();
@@ -188,7 +238,9 @@ $('bGen').onclick = async () => {
 
 async function approve(test) {
   if (!GEN) return;
-  if (!test && !confirm('سيتم إصدار الشهادة ' + GEN.certNo + ' وإرسالها إلى ' + CUR.email + '. متابعة؟')) return;
+  const held = CUR.clearance && CUR.clearance !== CLR.SIGNED;
+  if (!test && !confirm(held ? 'ستُعتمد الشهادة ' + GEN.certNo + ' وتُحفظ، وتُرسل إلى ' + CUR.email + ' تلقائياً بعد توقيعه المخالصة المالية. متابعة؟'
+    : 'سيتم إصدار الشهادة ' + GEN.certNo + ' وإرسالها إلى ' + CUR.email + '. متابعة؟')) return;
   document.querySelectorAll('#dActs button').forEach(x => x.disabled = true);
   msg($('dMsg'), test ? 'جارٍ الإرسال التجريبي...' : 'جارٍ الإصدار والإرسال...', 'info');
   try {

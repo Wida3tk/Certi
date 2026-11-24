@@ -67,17 +67,97 @@ async function loadPortal(preloaded) {
 
 function renderMine(list) {
   if (!list.length) { $('mineList').innerHTML = '<p class="hint">لا توجد طلبات بعد.</p>'; return; }
+  const clrNote = r => !r.clearance || r.clearance === CLR.SIGNED ? '' :
+    '<div class="hint">المخالصة المالية: ' + esc(r.clearance === CLR.SIGN ? 'جاهزة لتوقيعك' : r.clearance === CLR.DUE ? 'بانتظار إتمام السداد' : 'قيد الإعداد لدى المالية') + '</div>';
   $('mineList').innerHTML = '<div class="tablewrap"><table><tr><th>الدورة</th><th>تاريخ الطلب</th><th>الحالة</th><th></th></tr>' +
-    list.map(r => '<tr><td>' + esc(r.course) + '</td><td>' + esc(r.date) + '</td><td>' + pill(r.status) +
-      (r.note ? '<div class="hint">السبب: ' + esc(r.note) + '</div>' : '') + '</td><td>' +
-      (r.status === ST.ISSUED ? '<button data-c="' + esc(r.certNo) + '" class="dl">تحميل الشهادة</button>' : '') + '</td></tr>').join('') + '</table></div>';
+    list.map(r => '<tr><td>' + esc(r.course) + '</td><td>' + esc(r.date) + '</td><td>' + pill(r.status === ST.HELD ? 'معتمدة، تُرسل بعد المخالصة' : r.status) +
+      (r.note ? '<div class="hint">السبب: ' + esc(r.note) + '</div>' : '') + clrNote(r) + '</td><td class="row-actions">' +
+      (r.clearance === CLR.SIGN ? '<button data-sign="' + esc(r.id) + '" class="sign">مراجعة وتوقيع المخالصة</button>' : '') +
+      (r.status === ST.ISSUED ? '<button data-c="' + esc(r.certNo) + '" class="dl">تحميل الشهادة</button>' : '') +
+      (r.clearanceFile ? '<button data-clr="' + esc(r.id) + '" class="ghost dlc">المخالصة الموقّعة</button>' : '') + '</td></tr>').join('') + '</table></div>';
   document.querySelectorAll('.dl').forEach(b => b.onclick = async () => {
     busy(b, true);
     try { const f = await api('downloadMyCert', { token: SESSION.token, certNo: b.dataset.c }); downloadB64(f.name, f.data); }
     catch (e) { alert(e.message); }
     busy(b, false);
   });
+  document.querySelectorAll('.dlc').forEach(b => b.onclick = async () => {
+    busy(b, true);
+    try { const f = await api('downloadMyClearance', { token: SESSION.token, id: b.dataset.clr }); downloadB64(f.name, f.data); }
+    catch (e) { alert(e.message); }
+    busy(b, false);
+  });
+  document.querySelectorAll('.sign').forEach(b => b.onclick = () => openSign(b.dataset.sign, b));
+  // تنبيه في أعلى الطلب الجديد إن كانت هناك مخالصة بانتظار التوقيع
+  const waiting = list.filter(r => r.clearance === CLR.SIGN).length;
+  $('signAlert') && $('signAlert').remove();
+  if (waiting) $('pNew').insertAdjacentHTML('afterbegin', '<div id="signAlert" class="warnbox" style="margin-bottom:14px">📝 لديك مخالصة مالية بانتظار توقيعك. افتح «شهاداتي» واضغط «مراجعة وتوقيع المخالصة».</div>');
 }
+
+/* ---------- المخالصة: مراجعة + إقرار + رسم التوقيع ---------- */
+let SIGN_ID = null, SIG_DIRTY = false;
+const usLong = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? Number(m[3]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1] + ' ' + m[1] : ''; };
+function clrDocHtml(d) {
+  const row = (k, v, ltr) => '<tr><th>' + k + '</th><td' + (ltr ? ' dir="ltr"' : '') + '>' + esc(v) + '</td></tr>';
+  return '<div class="clr-head"><img src="assets/img/clearance/logo-blue.png" alt="سلوكيرا"><span>شركة حلول سلوك التقنية — س.ت 1010636715</span></div>' +
+    '<h3 class="clr-title">مخالصة مالية</h3>' +
+    '<h4>المعلومات الأولية</h4><table class="clr-t">' + row('اسم العميل', d.name) + row('رقم الجوال', d.phone, true) + row('البريد الإلكتروني', d.email, true) + '</table>' +
+    '<h4>ملخص الالتزامات المالية</h4><table class="clr-t">' + row('البرنامج / الخدمة', d.program) + row('عدد الساعات', d.hours) + row('الإجمالي', d.total, true) +
+      row('تاريخ البدء', usLong(d.start), true) + row('تاريخ الإخلاء', usLong(d.clearDate), true) + '</table>' +
+    d.text.map((x, i) => '<p' + (i === 0 ? ' style="font-weight:700"' : '') + '>' + esc(x) + '</p>').join('') +
+    '<p class="hint">رقم المستند: <span dir="ltr">' + esc(d.docId) + '</span></p>';
+}
+async function openSign(id, btn) {
+  busy(btn, true);
+  try {
+    const d = await api('clearanceView', { token: SESSION.token, id: id });
+    SIGN_ID = id;
+    $('clrDoc').innerHTML = clrDocHtml(d);
+    $('clrSignArea').classList.toggle('hide', d.status !== CLR.SIGN);
+    $('clrAgree').checked = false; clearMsg($('signMsg'));
+    ['pNew', 'pMine'].forEach(x => $(x).classList.add('hide')); $('pSign').classList.remove('hide');
+    document.querySelector('#vPortal .tabs').classList.add('hide');
+    setupPad(); window.scrollTo(0, 0);
+  } catch (e) { alert(e.message); }
+  busy(btn, false);
+}
+$('bSignBack').onclick = () => { $('pSign').classList.add('hide'); $('pMine').classList.remove('hide'); document.querySelector('#vPortal .tabs').classList.remove('hide'); };
+function setupPad() {
+  const c = $('sigPad'), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr);
+  const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  x.lineWidth = 2.4; x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = '#031233';
+  SIG_DIRTY = false; let drawing = false, last = null;
+  const pt = e => { const b = c.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+  c.onpointerdown = e => { drawing = true; last = pt(e); c.setPointerCapture(e.pointerId); e.preventDefault(); };
+  c.onpointermove = e => { if (!drawing) return; const p = pt(e); x.beginPath(); x.moveTo(last.x, last.y); x.lineTo(p.x, p.y); x.stroke(); last = p; SIG_DIRTY = true; e.preventDefault(); };
+  c.onpointerup = c.onpointercancel = () => { drawing = false; };
+}
+$('bSigClear').onclick = () => setupPad();
+/** توقيع بحدود القص (بلا فراغ) على خلفية شفافة */
+function signaturePng() {
+  const c = $('sigPad'), x = c.getContext('2d'), d = x.getImageData(0, 0, c.width, c.height).data;
+  let x0 = c.width, y0 = c.height, x1 = 0, y1 = 0;
+  for (let y = 0; y < c.height; y++) for (let i = 0; i < c.width; i++) if (d[(y * c.width + i) * 4 + 3] > 0) { if (i < x0) x0 = i; if (i > x1) x1 = i; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 - x0 < 20 || y1 - y0 < 8) return null;
+  const o = document.createElement('canvas'), pad = 8; o.width = x1 - x0 + pad * 2; o.height = y1 - y0 + pad * 2;
+  o.getContext('2d').drawImage(c, x0 - pad, y0 - pad, o.width, o.height, 0, 0, o.width, o.height);
+  return o.toDataURL('image/png');
+}
+$('bSign').onclick = async () => {
+  const b = $('bSign');
+  try {
+    if (!$('clrAgree').checked) throw new Error('ضع علامة على الإقرار أولاً.');
+    const sig = SIG_DIRTY && signaturePng();
+    if (!sig) throw new Error('ارسم توقيعك داخل المربع.');
+    busy(b, true); msg($('signMsg'), 'جارٍ توقيع المخالصة وحفظها...', 'info');
+    const res = await api('clearanceSign', { token: SESSION.token, id: SIGN_ID, data: { agree: true, signature: sig, ua: navigator.userAgent.slice(0, 180) } });
+    renderMine(res.requests);
+    $('clrSignArea').classList.add('hide');
+    msg($('signMsg'), 'تم توقيع المخالصة ✅ وصلتك نسخة منها على بريدك، وتجدها في «شهاداتي». ستصلك الشهادة بعد اعتمادها، أو الآن إن كانت معتمدة.', 'ok');
+  } catch (e) { msg($('signMsg'), e.message, 'err'); }
+  busy(b, false);
+};
 
 /* ---------- اختيار دورة أو أكثر ---------- */
 const PICKED = new Set();

@@ -105,6 +105,21 @@
     <h2>شهاداتي وطلباتي</h2>
     <div id="mineList"><p class="hint">جارٍ التحميل...</p></div>
   </div>
+
+  <!-- مراجعة المخالصة المالية وتوقيعها -->
+  <div id="pSign" class="card hide">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 style="margin:0">المخالصة المالية</h2><button class="ghost" id="bSignBack" type="button">رجوع إلى شهاداتي</button>
+    </div>
+    <div id="clrDoc" class="clr-doc" style="margin-top:14px"></div>
+    <div id="clrSignArea">
+      <label class="check"><input type="checkbox" id="clrAgree"> أقرّ بأنني اطلعت على المخالصة أعلاه وأوافق على كل ما ورد فيها، وأن توقيعي الإلكتروني أدناه ملزم كتوقيعي الخطي.</label>
+      <label style="margin-top:14px">ارسم توقيعك داخل المربع <span class="hint">(بإصبعك على الجوال أو بالماوس)</span></label>
+      <canvas id="sigPad" class="sig-pad" aria-label="مربع التوقيع"></canvas>
+      <div class="actions"><button id="bSign" type="button">توقيع المخالصة</button><button class="ghost" id="bSigClear" type="button">مسح التوقيع</button></div>
+    </div>
+    <div id="signMsg" class="msg" role="alert"></div>
+  </div>
 </section>
 </main>
 

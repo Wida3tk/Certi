@@ -75,6 +75,7 @@ const REQ_HEADERS = [
   'معرّف الدورة', 'اسم الدورة', 'اسم الدورة (EN)', 'نوع البرنامج', 'رقم المجموعة',
   'الحالة', 'تاريخ البدء', 'تاريخ الإتمام', 'القالب', 'رقم الشهادة', 'ملف الشهادة', 'تاريخ الإصدار',
   'اعتمدها', 'ملاحظات',
+  'المخالصة', 'بيانات المخالصة', 'ملف المخالصة', 'تاريخ التوقيع', 'سجل التوقيع',
 ];
 // أعمدة تُحفظ نصاً كما هي (حتى لا يحوّل الشيت الجوال لرقم أو التاريخ لكائن تاريخ)
 const TEXT_COLS = ['تاريخ الطلب', 'الجوال', 'تاريخ البدء', 'تاريخ الإتمام', 'رقم الشهادة', 'تاريخ الإصدار'];
@@ -82,7 +83,9 @@ const SURVEY_HEADERS = ['رقم الطلب', 'التاريخ', 'البريد', '
   .concat(CONFIG.SURVEY.map(s => s.q)).concat([CONFIG.SURVEY_COMMENT]);
 const TYPE_LABEL = { short: 'دورة قصيرة', long: 'برنامج طويل' };
 
-const ST = { PENDING: 'بانتظار المراجعة', ISSUED: 'صادرة', REJECTED: 'مرفوضة', REVOKED: 'ملغاة' };
+const ST = { PENDING: 'بانتظار المراجعة', ISSUED: 'صادرة', REJECTED: 'مرفوضة', REVOKED: 'ملغاة', HELD: 'معتمدة بانتظار المخالصة' };
+// حالات المخالصة المالية (البرامج التي فيها clearance: true في courses.json)
+const CLR = { FINANCE: 'بانتظار المالية', DUE: 'بانتظار السداد', SIGN: 'بانتظار التوقيع', SIGNED: 'موقّعة' };
 
 /* ===================== الإعداد (مرة واحدة) ===================== */
 function setup() {
@@ -103,6 +106,7 @@ function setup() {
     const root = DriveApp.createFolder('سلوكيرا — نظام الشهادات');
     props.setProperty('ROOT_FOLDER', root.getId());
     props.setProperty('CERTS_FOLDER', root.createFolder('الشهادات الصادرة').getId());
+    props.setProperty('CLEARANCE_FOLDER', root.createFolder('المخالصات المالية').getId());
     DriveApp.getFileById(ss.getId()).moveTo(root);
   }
   // الفريق يرى الشيت والملفات في Drive (محرّرون). الحساب المالك (care@) يملك كل شيء
@@ -225,13 +229,14 @@ function courses_() {
       type: c.type === 'long' ? 'long' : 'short', minDays: Number(c.minDays) || 0, active: c.active === true,
       // أسماء بديلة (كما في الفورم القديم) للمطابقة عند الاستيراد، ونسخ القالب (مثل اختلاف المدرب) — الافتراضي مجلد بنفس المعرّف
       aliases: (Array.isArray(c.aliases) ? c.aliases : []).map(String),
+      clearance: c.clearance === true,
       templates: (Array.isArray(c.templates) && c.templates.length ? c.templates : [{ dir: c.id, label: '' }])
         .filter(t => t && /^[a-z0-9-]+$/.test(String(t.dir))).map(t => ({ dir: String(t.dir), label: String(t.label || '') })) }));
   cache.put('courses', JSON.stringify(list), 600);
   return list;
 }
 function activeCourses_() {
-  return courses_().filter(c => c.active).map(c => ({ id: c.id, nameAr: c.nameAr, name: c.name, type: c.type, minDays: c.minDays }));
+  return courses_().filter(c => c.active).map(c => ({ id: c.id, nameAr: c.nameAr, name: c.name, type: c.type, minDays: c.minDays, clearance: c.clearance }));
 }
 function courseById_(id) { return courses_().filter(c => c.id === String(id))[0] || null; }
 
@@ -414,6 +419,7 @@ function getMyData(token) {
       status: r['الحالة'], certNo: r['الحالة'] === ST.ISSUED ? r['رقم الشهادة'] : '',
       issued: r['تاريخ الإصدار'],
       note: r['الحالة'] === ST.REJECTED ? r['ملاحظات'] : '',
+      clearance: clrState_(r), clearanceFile: !!r['ملف المخالصة'],
     })).reverse(),
   };
 }
@@ -475,8 +481,9 @@ function submitRequest(token, d) {
         'البريد': email, 'البريد في المنصة': safe_(platformEmail, 200), 'الجوال': safe_(phone, 20), 'المدينة': safe_(city, 60),
         'معرّف الدورة': c.id, 'اسم الدورة': c.nameAr, 'اسم الدورة (EN)': c.name,
         'نوع البرنامج': TYPE_LABEL[c.type], 'رقم المجموعة': group,
-        'الحالة': ST.PENDING,
+        'الحالة': ST.PENDING, 'المخالصة': c.clearance ? CLR.FINANCE : '',
       });
+      if (c.clearance) notifyFinance_(id, nameAr, email, c.nameAr);
       // الاستبيان: نفس الإجابات تُسجَّل لكل دورة حتى تبقى إحصاءات كل دورة صحيحة
       const sv = {}; sv['رقم الطلب'] = id; sv['التاريخ'] = now_(); sv['البريد'] = email; sv['الدورة'] = c.nameAr;
       CONFIG.SURVEY.forEach((x, i) => sv[x.q] = Number(d.survey[i]));
@@ -537,6 +544,8 @@ function reqView_(r) {
     start: r['تاريخ البدء'], end: r['تاريخ الإتمام'], certNo: r['رقم الشهادة'], note: r['ملاحظات'],
     approvedBy: r['اعتمدها'], issued: r['تاريخ الإصدار'], group: r['رقم المجموعة'] || '',
     templates: c ? c.templates : [{ dir: String(r['معرّف الدورة']), label: '' }], template: r['القالب'] || '',
+    clearance: clrState_(r), clearanceData: jsonOr_(r['بيانات المخالصة'], null), clearanceSigned: r['تاريخ التوقيع'] || '',
+    clearanceFile: !!r['ملف المخالصة'],
   };
 }
 function adminList(token) {
@@ -604,6 +613,14 @@ function adminApprove(token, d) {
 
   const file = DriveApp.getFolderById(prop_('CERTS_FOLDER')).createFile(blob);
   if (r['ملف الشهادة']) { try { DriveApp.getFileById(r['ملف الشهادة']).setTrashed(true); } catch (e) { } }
+  const hold = !!clrState_(r) && clrState_(r) !== CLR.SIGNED;
+  if (hold) {
+    setCells_(TABS.REQ, r._row, {
+      'الحالة': ST.HELD, 'تاريخ البدء': d.start, 'تاريخ الإتمام': d.end,
+      'ملف الشهادة': file.getId(), 'اعتمدها': by, 'القالب': tpl, 'الاسم بالإنجليزي': safe_(nameEn, 80), 'المخالصة': clrState_(r),
+    });
+    return 'اعتُمدت الشهادة ' + d.certNo + ' وحُفظت. ستُرسل للمتدرب تلقائياً فور توقيعه المخالصة المالية (حالتها الآن: ' + clrState_(r) + ').';
+  }
   setCells_(TABS.REQ, r._row, {
     'الحالة': ST.ISSUED, 'تاريخ البدء': d.start, 'تاريخ الإتمام': d.end,
     'ملف الشهادة': file.getId(), 'تاريخ الإصدار': now_(), 'اعتمدها': by, 'القالب': tpl,
@@ -740,7 +757,7 @@ function adminImport(token, url, fromDate) {
         'الاسم بالإنجليزي': safe_(x.nameEn, 80), 'الاسم بالعربي': safe_(x.nameAr, 80), 'البريد': x.email,
         'البريد في المنصة': safe_(x.platform, 200), 'الجوال': safe_(x.phone, 20), 'المدينة': safe_(x.city, 60),
         'معرّف الدورة': x.course.id, 'اسم الدورة': x.course.nameAr, 'اسم الدورة (EN)': x.course.name,
-        'نوع البرنامج': TYPE_LABEL[x.course.type], 'الحالة': ST.PENDING,
+        'نوع البرنامج': TYPE_LABEL[x.course.type], 'الحالة': ST.PENDING, 'المخالصة': x.course.clearance ? CLR.FINANCE : '',
         'مفتاح الاستيراد': key, 'المصدر': 'Google Form (استيراد ' + by + ')',
       });
       if (x.survey.some(Boolean)) {
@@ -753,6 +770,250 @@ function adminImport(token, url, fromDate) {
     });
     return 'عدد الطلبات المستوردة: ' + n + '، وصارت «بانتظار المراجعة».' + (f.rows.filter(x => !x.course).length ? ' بقيت ردود لدورات غير مفعّلة أو غير معروفة؛ تُستورد عند تفعيلها بإعادة الاستيراد.' : '');
   } finally { lock.releaseLock(); }
+}
+
+/* ===================== المخالصة المالية (البرامج الطويلة) =====================
+ * المسار: طلب ← «بانتظار المالية» (إشعار للمحاسب) ← المحاسب: «لا يوجد مبلغ» أو «يوجد مبلغ → تم السداد» مع بيانات المخالصة
+ * ← «بانتظار التوقيع» (إيميل للمتدرب) ← المتدرب يراجع ويقرّ ويرسم توقيعه في «شهاداتي» ← PDF موقّع من قالب Google Docs + سجل التوقيع
+ * ← «موقّعة» (نسخة للمتدرب والمالية) ← إن كانت الشهادة معتمدة («معتمدة بانتظار المخالصة») تُرسل تلقائياً. */
+const CLEARANCE_TEXT = [
+  'أنا الموقع أدناه، أقر وأؤكد بأنني قد قمت بسداد جميع الأقساط المستحقة للخدمة/ المنتج المذكور أعلاه، والتي كانت بذمتي لدى منصة رشد (سلوكيرا).',
+  'وبموجب هذا الإقرار، أصرح بأنني قد استلمت جميع المستندات والوثائق المتعلقة بهذه الخدمة/المنتج، وأنني أعفي المنصة من أي التزامات أو مطالبات مستقبلية تتعلق بهذا الأمر.',
+  'وعليه، فإنني أقر بإنهاء جميع الالتزامات والمطالبات بيني وبين المنصة فيما يتعلق بهذه الخدمة/المنتج.',
+];
+function jsonOr_(s, def) { try { return s ? JSON.parse(s) : def; } catch (e) { return def; } }
+/** حالة المخالصة: المسجلة، أو «بانتظار المالية» لطلب قائم لبرنامج فُعّلت مخالصته بعد تقديم الطلب (ما لم يكن صادراً) */
+function clrState_(r) {
+  if (r['المخالصة']) return r['المخالصة'];
+  const c = courseById_(r['معرّف الدورة']);
+  return c && c.clearance && [ST.PENDING, ST.HELD].indexOf(r['الحالة']) >= 0 ? CLR.FINANCE : '';
+}
+function notifyFinance_(id, nameAr, email, course) {
+  try {
+    sendMail_({
+      to: setting_('FINANCE'),
+      subject: 'طلب مخالصة مالية جديد | ' + course,
+      htmlBody: shell_('طلب مخالصة مالية',
+        '<p>وصل طلب شهادة لبرنامج يحتاج مخالصة مالية:</p>' +
+        '<p><b>' + esc_(nameAr) + '</b> — <span dir="ltr">' + esc_(email) + '</span><br>البرنامج: <b>' + esc_(course) + '</b><br>رقم الطلب: <span dir="ltr">' + id + '</span></p>' +
+        '<p><a href="' + appUrl_() + 'admin.html" style="display:inline-block;background:' + CONFIG.COLOR_PRIMARY + ';color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px">فتح لوحة الإدارة ← المخالصات</a></p>'),
+    });
+  } catch (e) { console.error('finance mail: ' + e); }
+}
+function clearanceData_(r) {
+  const d = jsonOr_(r['بيانات المخالصة'], {});
+  return {
+    name: r['الاسم بالعربي'] || r['الاسم بالإنجليزي'], nameEn: r['الاسم بالإنجليزي'], phone: String(r['الجوال'] || '').replace(/^'/, ''), email: r['البريد'],
+    program: d.program || r['اسم الدورة'], hours: d.hours || '', total: d.total || '', start: d.start || '', clearDate: d.clearDate || '',
+    docId: d.docId || '', issuedAt: d.issuedAt || '',
+  };
+}
+/** المحاسب يكمل بيانات المخالصة: outcome = nodue (لا يوجد مبلغ) | due (يوجد مبلغ — بانتظار السداد) | paid (تم السداد) */
+function adminClearance(token, id, d) {
+  const by = admin_(token);
+  d = d || {};
+  const r = findReq_(id);
+  if (!clrState_(r)) throw new Error('هذا الطلب لا يحتاج مخالصة مالية.');
+  if (clrState_(r) === CLR.SIGNED) throw new Error('المخالصة موقّعة مسبقاً.');
+  if ([ST.REJECTED, ST.REVOKED].indexOf(r['الحالة']) >= 0) throw new Error('الطلب ' + r['الحالة'] + '.');
+  const old = jsonOr_(r['بيانات المخالصة'], {});
+  const data = Object.assign(old, {
+    program: safe_(clean_(d.program) || old.program || r['اسم الدورة'], 120), hours: safe_(clean_(d.hours), 40),
+    total: safe_(clean_(d.total), 40), start: isIsoDate_(d.start) ? d.start : (old.start || ''), clearDate: isIsoDate_(d.clearDate) ? d.clearDate : (old.clearDate || ''),
+    by: by, at: now_(),
+  });
+  if (d.outcome === 'due') {
+    setCells_(TABS.REQ, r._row, { 'المخالصة': CLR.DUE, 'بيانات المخالصة': JSON.stringify(data) });
+    return 'سُجّل «يوجد مبلغ مستحق». بعد التواصل مع المتدرب والسداد اختاري «تم السداد» لإصدار المخالصة للتوقيع.';
+  }
+  if (['nodue', 'paid'].indexOf(d.outcome) < 0) throw new Error('اختاري نتيجة المخالصة.');
+  if (!data.program || !data.hours || !data.total || !data.start || !data.clearDate) throw new Error('أكملي بيانات المخالصة: البرنامج، عدد الساعات، الإجمالي، تاريخ البدء، تاريخ الإخلاء.');
+  data.outcome = d.outcome;
+  data.docId = data.docId || ('CLR-' + Utilities.formatDate(new Date(), tz_(), 'yyyy') + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase());
+  data.issuedAt = now_();
+  const log = jsonOr_(r['سجل التوقيع'], []);
+  log.push({ e: 'created', at: now_(), by: by });
+  setCells_(TABS.REQ, r._row, { 'المخالصة': CLR.SIGN, 'بيانات المخالصة': JSON.stringify(data), 'سجل التوقيع': JSON.stringify(log) });
+  sendMail_({
+    to: r['البريد'],
+    subject: 'المخالصة المالية جاهزة للتوقيع | ' + data.program,
+    htmlBody: shell_('مخالصتك جاهزة للتوقيع',
+      '<p>مرحباً ' + esc_(r['الاسم بالعربي'] || r['الاسم بالإنجليزي']) + '،</p>' +
+      '<p>أعددنا لك المخالصة المالية الخاصة ببرنامج <b>' + esc_(data.program) + '</b>. يُرجى مراجعتها وتوقيعها إلكترونياً لاستكمال إصدار شهادتك.</p>' +
+      '<p><a href="' + appUrl_() + '" style="display:inline-block;background:' + CONFIG.COLOR_PRIMARY + ';color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px">مراجعة المخالصة وتوقيعها</a></p>' +
+      '<p style="color:#666;font-size:13px">ادخل ببريدك هذا، ثم افتح «شهاداتي» واضغط «مراجعة وتوقيع المخالصة». تُرسل الشهادة إليك تلقائياً بعد التوقيع واعتمادها.</p>'),
+  });
+  log.push({ e: 'sent', at: now_(), to: r['البريد'] });
+  setCells_(TABS.REQ, r._row, { 'سجل التوقيع': JSON.stringify(log) });
+  return 'أُصدرت المخالصة (' + data.docId + ') وأُرسلت للمتدرب لتوقيعها.';
+}
+/** إعادة إرسال رابط التوقيع */
+function adminClearanceResend(token, id) {
+  admin_(token);
+  const r = findReq_(id);
+  if (r['المخالصة'] !== CLR.SIGN) throw new Error('المخالصة ليست بانتظار التوقيع.');
+  const d = clearanceData_(r);
+  sendMail_({ to: r['البريد'], subject: 'تذكير: المخالصة المالية بانتظار توقيعك | ' + d.program,
+    htmlBody: shell_('تذكير بتوقيع المخالصة', '<p>مرحباً ' + esc_(d.name) + '،</p><p>المخالصة المالية لبرنامج <b>' + esc_(d.program) +
+      '</b> ما زالت بانتظار توقيعك.</p><p><a href="' + appUrl_() + '" style="display:inline-block;background:' + CONFIG.COLOR_PRIMARY +
+      ';color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px">مراجعة المخالصة وتوقيعها</a></p>') });
+  return 'أُعيد إرسال رابط التوقيع إلى ' + r['البريد'];
+}
+function myReq_(token, id) {
+  const email = who_(token);
+  const r = findReq_(id);
+  if (cleanEmail_(r['البريد']) !== email) throw new Error('الطلب غير موجود.');
+  return r;
+}
+/** المتدرب يفتح المخالصة للمراجعة (يُسجَّل الاطلاع) */
+function clearanceView(token, id) {
+  const r = myReq_(token, id);
+  if ([CLR.SIGN, CLR.SIGNED].indexOf(r['المخالصة']) < 0) throw new Error('المخالصة غير جاهزة بعد.');
+  if (r['المخالصة'] === CLR.SIGN) {
+    const log = jsonOr_(r['سجل التوقيع'], []);
+    if (!log.some(x => x.e === 'viewed')) { log.push({ e: 'viewed', at: now_() }); setCells_(TABS.REQ, r._row, { 'سجل التوقيع': JSON.stringify(log) }); }
+  }
+  return Object.assign(clearanceData_(r), { status: r['المخالصة'], text: CLEARANCE_TEXT, signedAt: r['تاريخ التوقيع'] || '' });
+}
+/** التوقيع: إقرار + صورة توقيع مرسومة (PNG). يُنشأ PDF موقّع من قالب Google Docs ويُحفظ ويُرسل، وتُطلق الشهادة المعلّقة */
+function clearanceSign(token, id, d) {
+  const email = who_(token);
+  d = d || {};
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const r = myReq_(token, id);
+    if (r['المخالصة'] !== CLR.SIGN) throw new Error(r['المخالصة'] === CLR.SIGNED ? 'المخالصة موقّعة مسبقاً.' : 'المخالصة غير جاهزة للتوقيع.');
+    if (d.agree !== true) throw new Error('يجب الإقرار بالاطلاع على المخالصة والموافقة على ما ورد فيها.');
+    const m = String(d.signature || '').match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) throw new Error('ارسم توقيعك في المربع.');
+    const sigBytes = Utilities.base64Decode(m[1]);
+    if (sigBytes.length < 800 || sigBytes.length > 400000) throw new Error('التوقيع غير واضح. ارسمه مرة أخرى.');
+    const data = clearanceData_(r);
+    const log = jsonOr_(r['سجل التوقيع'], []);
+    const signedAt = now_();
+    log.push({ e: 'signed', at: signedAt, by: email, ua: safe_(String(d.ua || ''), 200) });
+    const pdf = buildClearancePdf_(data, Utilities.newBlob(sigBytes, 'image/png', 'signature.png'), log, signedAt);
+    const file = DriveApp.getFolderById(clearanceFolder_()).createFile(pdf);
+    setCells_(TABS.REQ, r._row, { 'المخالصة': CLR.SIGNED, 'ملف المخالصة': file.getId(), 'تاريخ التوقيع': signedAt, 'سجل التوقيع': JSON.stringify(log) });
+    const copy = pdf.copyBlob().setName(pdf.getName());
+    try {
+      sendMail_({ to: email, subject: 'نسخة من مخالصتك المالية الموقّعة | ' + data.program, attachments: [copy],
+        htmlBody: shell_('تم توقيع المخالصة', '<p>مرحباً ' + esc_(data.name) + '،</p><p>شكراً لك، تم توقيع المخالصة المالية لبرنامج <b>' + esc_(data.program) +
+          '</b>، ونرفق لك نسخة منها.</p><p>' + (r['الحالة'] === ST.HELD ? 'شهادتك معتمدة، وستصلك في رسالة مستقلة الآن.' : 'ستصلك شهادتك بعد اعتمادها.') + '</p>') });
+      sendMail_({ to: setting_('FINANCE'), subject: 'تم توقيع مخالصة | ' + data.name + ' | ' + data.program, attachments: [pdf],
+        htmlBody: shell_('تم توقيع مخالصة', '<p><b>' + esc_(data.name) + '</b> (<span dir="ltr">' + esc_(email) + '</span>) وقّع مخالصة برنامج <b>' + esc_(data.program) +
+          '</b> بتاريخ ' + signedAt + '.</p><p>رقم المستند: <span dir="ltr">' + data.docId + '</span></p>') });
+    } catch (e) { console.error('clearance mail: ' + e); }
+    // إطلاق الشهادة المعلّقة
+    if (r['الحالة'] === ST.HELD && r['ملف الشهادة']) {
+      const f = DriveApp.getFileById(r['ملف الشهادة']);
+      setCells_(TABS.REQ, r._row, { 'الحالة': ST.ISSUED, 'تاريخ الإصدار': now_() });
+      sendCertEmail_(cleanEmail_(r['البريد']), Object.assign({}, r), r['رقم الشهادة'], f.getBlob().setName(f.getName()), false);
+    }
+    return { ok: true, requests: getMyData(token).requests };
+  } finally { lock.releaseLock(); }
+}
+function downloadMyClearance(token, id) {
+  const r = myReq_(token, id);
+  if (!r['ملف المخالصة']) throw new Error('لا توجد مخالصة موقّعة.');
+  const f = DriveApp.getFileById(r['ملف المخالصة']);
+  return { name: f.getName(), data: Utilities.base64Encode(f.getBlob().getBytes()) };
+}
+function adminDownloadClearance(token, id) {
+  admin_(token);
+  const r = findReq_(id);
+  if (!r['ملف المخالصة']) throw new Error('لا توجد مخالصة موقّعة.');
+  const f = DriveApp.getFileById(r['ملف المخالصة']);
+  return { name: f.getName(), data: Utilities.base64Encode(f.getBlob().getBytes()) };
+}
+function clearanceFolder_() {
+  const p = PropertiesService.getScriptProperties();
+  let id = p.getProperty('CLEARANCE_FOLDER');
+  if (!id) { id = DriveApp.getFolderById(prop_('ROOT_FOLDER')).createFolder('المخالصات المالية').getId(); p.setProperty('CLEARANCE_FOLDER', id); }
+  return id;
+}
+/** صور المخالصة (الشعار، الختم، التذييل) من الموقع — تُحفظ في الذاكرة المؤقتة */
+function clearanceAsset_(name) {
+  const res = UrlFetchApp.fetch(appUrl_() + 'assets/img/clearance/' + name, { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) return null;
+  return res.getBlob().setName(name);
+}
+function usLong_(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? Number(m[3]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1] + ' ' + m[1] : String(iso || '');
+}
+/** يبني مستند المخالصة في Google Docs (يدعم العربية واتجاهها) ثم يحوّله PDF. المستند المؤقت يُحذف بعد التحويل */
+function buildClearancePdf_(d, signature, log, signedAt) {
+  const name = (d.docId + ' - Financial Clearance - ' + (d.nameEn || d.email)).replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 140);
+  const doc = DocumentApp.create(name);
+  try {
+    const body = doc.getBody();
+    body.setMarginTop(36).setMarginBottom(36).setMarginLeft(48).setMarginRight(48);
+    const RTL = p => { try { p.setLeftToRight(false); } catch (e) { } return p; };
+    const para = (text, opt) => {
+      const p = RTL(body.appendParagraph(text || ''));
+      p.setAlignment(opt && opt.center ? DocumentApp.HorizontalAlignment.CENTER : DocumentApp.HorizontalAlignment.RIGHT);
+      const t = p.editAsText();
+      t.setFontFamily('Arial').setFontSize((opt && opt.size) || 11).setBold(!!(opt && opt.bold)).setForegroundColor((opt && opt.color) || '#031233');
+      if (opt && opt.after != null) p.setSpacingAfter(opt.after);
+      return p;
+    };
+    // الرأس: الشعار + اسم الشركة
+    const logo = clearanceAsset_('logo-blue.png');
+    const head = RTL(body.getParagraphs()[0]);
+    head.setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+    if (logo) head.appendInlineImage(logo).setWidth(110).setHeight(69);
+    para('شركة حلول سلوك التقنية — س.ت 1010636715', { size: 9, color: '#5B6478', after: 6 });
+    para('مخالصة مالية', { center: true, bold: true, size: 18, after: 10 });
+    const table = (title, rows) => {
+      para(title, { bold: true, size: 12, after: 4 });
+      const t = body.appendTable(rows.map(r => [r[1], r[0]])); // القيمة يساراً والعنوان يميناً
+      t.setBorderColor('#C9D3EA');
+      for (let i = 0; i < t.getNumRows(); i++) {
+        const row = t.getRow(i);
+        [0, 1].forEach(j => {
+          const c = row.getCell(j); c.setPaddingTop(5).setPaddingBottom(5);
+          const p = RTL(c.getChild(0).asParagraph()); p.setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+          p.editAsText().setFontFamily('Arial').setFontSize(11).setBold(j === 1).setForegroundColor('#031233');
+          if (j === 1) c.setBackgroundColor('#E8EEFB').setWidth(140);
+        });
+      }
+      para('', { after: 2 });
+    };
+    table('المعلومات الأولية', [['اسم العميل', d.name], ['رقم الجوال', d.phone], ['البريد الإلكتروني', d.email]]);
+    table('ملخص الالتزامات المالية', [['البرنامج / الخدمة', d.program], ['عدد الساعات', d.hours], ['الإجمالي', d.total],
+      ['تاريخ البدء', usLong_(d.start)], ['تاريخ الإخلاء', usLong_(d.clearDate)]]);
+    CLEARANCE_TEXT.forEach((x, i) => para(x, { size: 11, bold: i === 0, after: 6 }).setLineSpacing(1.4));
+    para('وحرر هذا الإقرار في تاريخ ' + String(signedAt).slice(0, 10).split('-').join('/') + '.', { size: 11, after: 10 });
+    para('الاسم: ' + d.name, { bold: true, size: 11, after: 2 });
+    const sp = para('التوقيع: ', { bold: true, size: 11, after: 6 });
+    sp.appendInlineImage(signature).setWidth(130).setHeight(52);
+    para('منصة سلوكيرا', { bold: true, size: 11, after: 2 });
+    const stamp = clearanceAsset_('stamp.png');
+    if (stamp) { const p = para('', {}); p.appendInlineImage(stamp).setWidth(115).setHeight(115); }
+    const foot = clearanceAsset_('footer.png');
+    if (foot) { const f = doc.addFooter(); const fp = f.getParagraphs()[0]; fp.setAlignment(DocumentApp.HorizontalAlignment.CENTER); fp.appendInlineImage(foot).setWidth(480).setHeight(47); }
+    // سجل التوقيع الإلكتروني
+    body.appendPageBreak();
+    para('سجل التوقيع الإلكتروني', { center: true, bold: true, size: 16, after: 8 });
+    const label = { created: 'إنشاء المستند', sent: 'إرسال للتوقيع', viewed: 'اطلاع المتدرب', signed: 'التوقيع' };
+    const lt = body.appendTable([['التفاصيل', 'الوقت', 'الإجراء']].concat(log.map(x => [
+      [x.by || x.to || '', x.ua ? 'الجهاز: ' + x.ua : ''].filter(String).join(' — '), x.at, label[x.e] || x.e])));
+    lt.setBorderColor('#C9D3EA');
+    for (let i = 0; i < lt.getNumRows(); i++) for (let j = 0; j < 3; j++) {
+      const c = lt.getRow(i).getCell(j); const p = RTL(c.getChild(0).asParagraph());
+      p.setAlignment(DocumentApp.HorizontalAlignment.RIGHT); p.editAsText().setFontFamily('Arial').setFontSize(9).setBold(i === 0).setForegroundColor('#031233');
+      if (i === 0) c.setBackgroundColor('#E8EEFB');
+    }
+    para('', {});
+    para('رقم المستند: ' + d.docId, { size: 10 });
+    para('التحقق من الهوية: دخول المتدرب ببريده الإلكتروني ' + d.email + ' برمز مؤقت أُرسل إليه، ثم الإقرار بالاطلاع والموافقة ورسم التوقيع.', { size: 9, color: '#5B6478' });
+    doc.saveAndClose();
+    const pdf = DriveApp.getFileById(doc.getId()).getAs('application/pdf').setName(name + '.pdf');
+    return pdf;
+  } finally {
+    try { DriveApp.getFileById(doc.getId()).setTrashed(true); } catch (e) { }
+  }
 }
 
 /* ===================== الإرسال ===================== */
@@ -837,6 +1098,12 @@ const ACTIONS = {
   adminReject: b => adminReject(b.token, b.id, b.reason),
   adminRevoke: b => adminRevoke(b.token, b.id, b.reason),
   adminImportPreview: b => adminImportPreview(b.token, b.url, b.from),
+  adminClearance: b => adminClearance(b.token, b.id, b.data),
+  adminClearanceResend: b => adminClearanceResend(b.token, b.id),
+  adminDownloadClearance: b => adminDownloadClearance(b.token, b.id),
+  clearanceView: b => clearanceView(b.token, b.id),
+  clearanceSign: b => clearanceSign(b.token, b.id, b.data),
+  downloadMyClearance: b => downloadMyClearance(b.token, b.id),
   adminImport: b => adminImport(b.token, b.url, b.from),
 };
 

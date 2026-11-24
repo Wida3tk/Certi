@@ -15,7 +15,8 @@ const store = {
 function msg(el, t, kind) { el.textContent = t; el.className = 'msg ' + (kind || 'info'); }
 function clearMsg(el) { el.textContent = ''; el.className = 'msg'; }
 function busy(btn, on) { if (btn) { btn.disabled = on; btn.classList.toggle('busy', !!on); } }
-const ST = { PENDING: 'بانتظار المراجعة', ISSUED: 'صادرة', REJECTED: 'مرفوضة', REVOKED: 'ملغاة' };
+const ST = { PENDING: 'بانتظار المراجعة', ISSUED: 'صادرة', REJECTED: 'مرفوضة', REVOKED: 'ملغاة', HELD: 'معتمدة بانتظار المخالصة' };
+const CLR = { FINANCE: 'بانتظار المالية', DUE: 'بانتظار السداد', SIGN: 'بانتظار التوقيع', SIGNED: 'موقّعة' };
 function pill(s) {
   const c = s === ST.ISSUED ? 'p-ok' : s === ST.REJECTED ? 'p-no' : s === ST.REVOKED ? 'p-rev' : 'p-wait';
   return '<span class="pill ' + c + '">' + esc(s) + '</span>';

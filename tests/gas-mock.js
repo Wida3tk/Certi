@@ -35,7 +35,7 @@ function makeSheet(name) {
 }
 
 function createEnv(opts = {}) {
-  const props = {}, cache = new Map(), files = {}, mails = [], spreadsheets = {}, shared = {};
+  const props = {}, cache = new Map(), files = {}, mails = [], spreadsheets = {}, shared = {}, docs = {};
   const site = opts.coursesJson || JSON.stringify([
     { id: 'persuasion-influence', nameAr: 'فن الإقناع والتأثير', name: 'The Art of Persuasion and Influence', type: 'short', active: true },
     { id: 'specialist', nameAr: 'إعداد الأخصائي', name: 'ABA Specialist', type: 'short', minDays: 10, active: true },
@@ -71,7 +71,7 @@ function createEnv(opts = {}) {
 
   function blob(bytes, type, name) {
     bytes = Buffer.from(Array.isArray(bytes) ? bytes.map(b => b & 255) : bytes);
-    return { getDataAsString: () => bytes.toString('utf8'), getBytes: () => Array.from(bytes).map(b => b > 127 ? b - 256 : b), _buf: bytes, getMimeType: () => type, getName: () => name, setName(n) { name = n; return this; } };
+    return { getDataAsString: () => bytes.toString('utf8'), getBytes: () => Array.from(bytes).map(b => b > 127 ? b - 256 : b), _buf: bytes, getMimeType: () => type, getName: () => name, setName(n) { name = n; return this; }, copyBlob: () => blob(bytes, type, name) };
   }
   function folder(id) {
     return {
@@ -97,6 +97,10 @@ function createEnv(opts = {}) {
       createFolder: () => folder(newId('F')),
       getFolderById: id => folder(id),
       getFileById: id => {
+        if (docs[id]) { // مستند Google Docs مؤقت (المخالصة)
+          const d = docs[id];
+          return { getAs: () => blob(Buffer.from('%PDF-1.4\n' + d.text.join('\n')), 'application/pdf', d.name + '.pdf'), setTrashed(t) { d.trashed = t; } };
+        }
         if (!files[id]) { if (/^SS/.test(id)) return { moveTo() {} }; throw new Error('file not found'); }
         const f = files[id];
         return { getName: () => f.blob.getName(), getMimeType: () => f.blob.getMimeType(), getBlob: () => f.blob,
@@ -111,7 +115,27 @@ function createEnv(opts = {}) {
       getAliases: () => (opts.aliases || ['care@sulukera.com']),
       sendEmail: (to, subject, body, o) => mails.push(Object.assign({ via: 'GmailApp', to, subject }, o)),
     },
-    UrlFetchApp: { fetch: url => ({ getResponseCode: () => 200, getContentText: () => site, _url: url }) },
+    UrlFetchApp: { fetch: url => ({ getResponseCode: () => 200, getContentText: () => site, getBlob: () => blob(Buffer.from('PNG'), 'image/png', 'x.png'), _url: url }) },
+    DocumentApp: {
+      HorizontalAlignment: { RIGHT: 'R', CENTER: 'C', LEFT: 'L' },
+      create(name) {
+        const id = newId('DOC'), d = docs[id] = { name, text: [], images: 0, trashed: false, saved: false };
+        const chain = new Proxy({}, { get: (t, k) => (k === 'then' ? undefined : () => chain) });
+        const para = txt => { if (txt) d.text.push(txt); return new Proxy({}, { get: (t, k) => {
+          if (k === 'appendInlineImage') return () => { d.images++; return chain; };
+          if (k === 'editAsText') return () => chain;
+          return () => para(''); } }); };
+        const cell = c => new Proxy({}, { get: (t, k) => (k === 'getChild' ? () => ({ asParagraph: () => para('') }) : () => cell(c)) });
+        const body = new Proxy({}, { get: (t, k) => {
+          if (k === 'appendParagraph') return txt => para(txt);
+          if (k === 'getParagraphs') return () => [para('')];
+          if (k === 'appendTable') return rows => { rows.forEach(r => d.text.push(r.join(' | '))); return {
+            setBorderColor() { return this; }, getNumRows: () => rows.length, getRow: () => ({ getCell: () => cell() }) }; };
+          if (k === 'appendPageBreak') return () => d.text.push('---page---');
+          return () => body; } });
+        return { getId: () => id, getBody: () => body, addFooter: () => ({ getParagraphs: () => [para('')] }), saveAndClose() { d.saved = true; } };
+      },
+    },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: s => ({ setMimeType() { return this; }, content: s }) },
     Utilities: {
       formatDate, getUuid: () => crypto.randomUUID(),
@@ -138,7 +162,7 @@ function createEnv(opts = {}) {
     const out = ctx.doPost({ postData: { contents: JSON.stringify(Object.assign({ action }, body)) } });
     return JSON.parse(out.content);
   };
-  return { ctx, props, cache, files, mails, spreadsheets, shared, api, sheet: n => spreadsheets[props.SHEET_ID].getSheetByName(n) };
+  return { ctx, props, cache, files, mails, spreadsheets, shared, docs, api, sheet: n => spreadsheets[props.SHEET_ID].getSheetByName(n) };
 }
 
 module.exports = { createEnv };
