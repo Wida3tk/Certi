@@ -1109,7 +1109,12 @@ function clearanceSign(token, id, d) {
     const log = jsonOr_(r['سجل التوقيع'], []);
     const signedAt = now_();
     log.push({ e: 'signed', at: signedAt, by: email, ua: safe_(String(d.ua || ''), 200) });
-    const pdf = buildClearancePdf_(data, Utilities.newBlob(sigBytes, 'image/png', 'signature.png'), log, signedAt);
+    let pdf;
+    try { pdf = buildClearancePdf_(data, Utilities.newBlob(sigBytes, 'image/png', 'signature.png'), log, signedAt); }
+    catch (e) {
+      console.error('clearance pdf: ' + e);
+      throw new Error('تعذّر حفظ المخالصة الآن بسبب خلل فني لدينا، ولم يُحفظ توقيعك. أبلغنا الفريق، ويُرجى المحاولة لاحقاً.');
+    }
     const file = DriveApp.getFolderById(clearanceFolder_()).createFile(pdf);
     setCells_(TABS.REQ, r._row, { 'المخالصة': CLR.SIGNED, 'ملف المخالصة': file.getId(), 'تاريخ التوقيع': signedAt, 'سجل التوقيع': JSON.stringify(log) });
     const copy = pdf.copyBlob().setName(pdf.getName());
@@ -1356,6 +1361,16 @@ function doPost(e) {
 }
 
 /** GET يرجع حالة فقط (للتأكد أن النشر يعمل) */
+/** للتفويض فقط: يُشغَّل مرة من محرر Apps Script بحساب care@ (Run) فتظهر نافذة الموافقة على كل الصلاحيات، ومنها Google Docs للمخالصة */
+function authorize() {
+  const doc = DocumentApp.create('اختبار صلاحية المخالصة — يُحذف تلقائياً');
+  DriveApp.getFileById(doc.getId()).setTrashed(true);
+  MailApp.getRemainingDailyQuota();
+  UrlFetchApp.fetch(siteUrl_() + 'templates/courses.json', { muteHttpExceptions: true });
+  Logger.log('✅ الصلاحيات مكتملة (Google Docs، Drive، البريد، الشيت).');
+  return 'ok';
+}
+
 function doGet() {
   memoReset_();
   ensureSetup_();
