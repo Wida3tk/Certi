@@ -69,13 +69,15 @@ function verifyUrl_(certNo) { return siteUrl_() + '?v=' + encodeURIComponent(cer
 function appUrl_() { return String(setting_('APP_URL')).replace(/\/?$/, '/'); }
 
 /* ===================== الأوراق ===================== */
-const TABS = { REQ: 'الطلبات', SURVEY: 'الرضا' };
+const TABS = { REQ: 'الطلبات', SURVEY: 'الرضا', LOG: 'السجل' };
+const LOG_HEADERS = ['التاريخ', 'بواسطة', 'الإجراء', 'رقم الطلب', 'تفاصيل'];
 const REQ_HEADERS = [
   'رقم الطلب', 'تاريخ الطلب', 'الاسم بالإنجليزي', 'الاسم بالعربي', 'البريد', 'البريد في المنصة', 'الجوال', 'المدينة',
   'معرّف الدورة', 'اسم الدورة', 'اسم الدورة (EN)', 'نوع البرنامج', 'رقم المجموعة',
   'الحالة', 'تاريخ البدء', 'تاريخ الإتمام', 'القالب', 'رقم الشهادة', 'ملف الشهادة', 'تاريخ الإصدار',
   'اعتمدها', 'ملاحظات',
   'المخالصة', 'بيانات المخالصة', 'ملف المخالصة', 'تاريخ التوقيع', 'سجل التوقيع',
+  'تعديل الاسم', 'بيانات تعديل الاسم',
 ];
 // أعمدة تُحفظ نصاً كما هي (حتى لا يحوّل الشيت الجوال لرقم أو التاريخ لكائن تاريخ)
 const TEXT_COLS = ['تاريخ الطلب', 'الجوال', 'تاريخ البدء', 'تاريخ الإتمام', 'رقم الشهادة', 'تاريخ الإصدار'];
@@ -86,6 +88,8 @@ const TYPE_LABEL = { short: 'دورة قصيرة', long: 'برنامج طويل'
 const ST = { PENDING: 'بانتظار المراجعة', ISSUED: 'صادرة', REJECTED: 'مرفوضة', REVOKED: 'ملغاة', HELD: 'معتمدة بانتظار المخالصة' };
 // حالات المخالصة المالية (البرامج التي فيها clearance: true في courses.json)
 const CLR = { FINANCE: 'بانتظار المالية', DUE: 'بانتظار السداد', SIGN: 'بانتظار التوقيع', SIGNED: 'موقّعة', NONE: 'لا تحتاج مخالصة' };
+// طلب تعديل الاسم بعد الإصدار (برسوم): المتدرب يطلب ← المحاسب يؤكد السداد أو يعفي ← إعادة الإصدار بنفس الرقم
+const NC = { PAY: 'بانتظار تأكيد السداد', DONE: 'تم التعديل', REJECTED: 'مرفوض' };
 
 /* ===================== الإعداد (مرة واحدة) ===================== */
 function setup() {
@@ -99,8 +103,9 @@ function setup() {
   }
   ensureTab_(ss, TABS.REQ, REQ_HEADERS, TEXT_COLS);
   ensureTab_(ss, TABS.SURVEY, SURVEY_HEADERS, ['التاريخ']);
+  ensureTab_(ss, TABS.LOG, LOG_HEADERS, ['التاريخ']);
   const first = ss.getSheets()[0];
-  if (ss.getSheets().length > 2 && (first.getName() === 'Sheet1' || first.getName() === 'الورقة1')) ss.deleteSheet(first);
+  if (ss.getSheets().length > 3 && (first.getName() === 'Sheet1' || first.getName() === 'الورقة1')) ss.deleteSheet(first);
 
   if (!props.getProperty('ROOT_FOLDER')) {
     const root = DriveApp.createFolder('سلوكيرا — نظام الشهادات');
@@ -351,6 +356,7 @@ function adminLogin(email, password) {
     throw new Error('البريد أو كلمة المرور غير صحيحة. أول مرة؟ اضغط «تعيين / نسيت كلمة المرور».');
   }
   cache.remove('atry:' + email);
+  log_(email, 'دخول اللوحة', '', '');
   const token = Utilities.getUuid() + Utilities.getUuid();
   cache.put('atok:' + token, email, CONFIG.ADMIN_SESSION_HOURS * 3600);
   return { token: token, email: email };
@@ -420,6 +426,9 @@ function getMyData(token) {
       issued: r['تاريخ الإصدار'],
       note: r['الحالة'] === ST.REJECTED ? r['ملاحظات'] : '',
       clearance: clrState_(r), clearanceFile: !!r['ملف المخالصة'],
+      nameEn: r['الاسم بالإنجليزي'], nameChange: r['تعديل الاسم'] || '',
+      nameChangeTo: (jsonOr_(r['بيانات تعديل الاسم'], {}) || {}).nameEn || '',
+      nameChangeNote: r['تعديل الاسم'] === NC.REJECTED ? ((jsonOr_(r['بيانات تعديل الاسم'], {}) || {}).reason || '') : '',
     })).reverse(),
   };
 }
@@ -547,6 +556,7 @@ function reqView_(r) {
     clearance: clrState_(r), clearanceData: jsonOr_(r['بيانات المخالصة'], null), clearanceSigned: r['تاريخ التوقيع'] || '',
     clearanceFile: !!r['ملف المخالصة'],
     // يمكن تحويل طلب البرنامج الطويل للمخالصة يدوياً (مثل OBM-P: بعض المتدربين فقط)
+    nameChange: r['تعديل الاسم'] || '', nameChangeData: jsonOr_(r['بيانات تعديل الاسم'], null),
     canStartClr: (!clrState_(r) || clrState_(r) === CLR.NONE) && [ST.PENDING, ST.HELD].indexOf(r['الحالة']) >= 0,
   };
 }
@@ -608,6 +618,12 @@ function adminApprove(token, d) {
   if (blob.getBytes().slice(0, 4).map(b => String.fromCharCode(b)).join('') !== '%PDF') throw new Error('ملف الشهادة غير صالح.');
 
   const view = Object.assign({}, r, { 'الاسم بالإنجليزي': nameEn, 'تاريخ البدء': d.start, 'تاريخ الإتمام': d.end });
+  const nc = d.nameChange && !d.test ? String(d.nameChange) : '';
+  if (nc) {
+    if (r['تعديل الاسم'] !== NC.PAY) throw new Error('لا يوجد طلب تعديل اسم بانتظار السداد على هذه الشهادة.');
+    if (['paid', 'waived'].indexOf(nc) < 0) throw new Error('حددي: تم السداد أو إعفاء من الرسوم.');
+    if (r['الحالة'] !== ST.ISSUED) throw new Error('تعديل الاسم للشهادات الصادرة فقط.');
+  }
   if (d.test) {
     sendCertEmail_(cleanEmail_(by), view, d.certNo, blob, true);
     return 'تم إرسال نسخة تجريبية إلى ' + by + ' (لم تتغير حالة الطلب).';
@@ -621,6 +637,7 @@ function adminApprove(token, d) {
       'الحالة': ST.HELD, 'تاريخ البدء': d.start, 'تاريخ الإتمام': d.end,
       'ملف الشهادة': file.getId(), 'اعتمدها': by, 'القالب': tpl, 'الاسم بالإنجليزي': safe_(nameEn, 80), 'المخالصة': clrState_(r),
     });
+    log_(by, 'اعتماد بانتظار المخالصة', r['رقم الطلب'], d.certNo + ' — ' + r['اسم الدورة']);
     return 'اعتُمدت الشهادة ' + d.certNo + ' وحُفظت. ستُرسل للمتدرب تلقائياً فور توقيعه المخالصة المالية (حالتها الآن: ' + clrState_(r) + ').';
   }
   setCells_(TABS.REQ, r._row, {
@@ -628,7 +645,17 @@ function adminApprove(token, d) {
     'ملف الشهادة': file.getId(), 'تاريخ الإصدار': now_(), 'اعتمدها': by, 'القالب': tpl,
     'الاسم بالإنجليزي': safe_(nameEn, 80),
   });
+  if (nc) {
+    const ncd = jsonOr_(r['بيانات تعديل الاسم'], {}) || {};
+    Object.assign(ncd, { outcome: nc, by: by, doneAt: now_(), finalNameEn: nameEn });
+    setCells_(TABS.REQ, r._row, { 'تعديل الاسم': NC.DONE, 'بيانات تعديل الاسم': JSON.stringify(ncd) });
+    sendCertEmail_(cleanEmail_(r['البريد']), view, d.certNo, blob, false,
+      'تم تعديل الاسم على شهادتك بناءً على طلبك، وهذه الشهادة المحدّثة بنفس رقمها. النسخة السابقة لم تعد معتمدة.');
+    log_(by, 'تعديل الاسم وإعادة الإصدار', r['رقم الطلب'], d.certNo + ': ' + (ncd.oldNameEn || r['الاسم بالإنجليزي']) + ' ← ' + nameEn + (nc === 'waived' ? ' (إعفاء من الرسوم)' : ' (تم السداد)'));
+    return 'عُدّل الاسم وأُعيد إصدار الشهادة ' + d.certNo + ' وأُرسلت إلى ' + r['البريد'];
+  }
   sendCertEmail_(cleanEmail_(r['البريد']), view, d.certNo, blob, false);
+  log_(by, r['الحالة'] === ST.ISSUED ? 'إعادة إصدار' : 'إصدار', r['رقم الطلب'], d.certNo + ' — ' + r['اسم الدورة']);
   return 'صدرت الشهادة ' + d.certNo + ' وأُرسلت إلى ' + r['البريد'];
 }
 
@@ -648,6 +675,7 @@ function adminReject(token, id, reason) {
       '<p style="background:#FFF4E5;padding:12px 16px;border-radius:8px">' + esc_(reason) + '</p>' +
       '<p>يمكنك تقديم طلب جديد بعد المعالجة من <a href="' + appUrl_() + '">موقع الشهادات</a>، أو الرد على هذه الرسالة.</p>'),
   });
+  log_(by, 'رفض', r['رقم الطلب'], r['اسم الدورة'] + ' — ' + safe_(reason, 200));
   return 'تم الرفض وإبلاغ المتدرب.';
 }
 
@@ -656,9 +684,154 @@ function adminRevoke(token, id, reason) {
   const r = findReq_(id);
   if (r['الحالة'] !== ST.ISSUED) throw new Error('الإلغاء للشهادات الصادرة فقط.');
   setCells_(TABS.REQ, r._row, { 'الحالة': ST.REVOKED, 'ملاحظات': safe_(reason, 1000), 'اعتمدها': by });
+  log_(by, 'إلغاء شهادة', r['رقم الطلب'], r['رقم الشهادة'] + ' — ' + safe_(reason, 200));
   return 'أُلغيت الشهادة ' + r['رقم الشهادة'] + '. صفحة التحقق ستظهرها ملغاة.';
 }
 
+
+/* ===================== سجل النشاط ===================== */
+/** يسجّل إجراءات الفريق المهمة في تبويب «السجل». لا يوقف العملية إن فشل */
+function log_(by, action, id, detail) {
+  try {
+    if (!sheet_(TABS.LOG)) { ensureTab_(ss_(), TABS.LOG, LOG_HEADERS, ['التاريخ']); delete MEMO_.sheets[TABS.LOG]; }
+    appendObj_(TABS.LOG, LOG_HEADERS, { 'التاريخ': now_(), 'بواسطة': by || '', 'الإجراء': action, 'رقم الطلب': id || '', 'تفاصيل': safe_(String(detail || ''), 300) });
+  } catch (e) { console.error('log: ' + e); }
+}
+
+/* ===================== تعديل الاسم بعد الإصدار (برسوم) =====================
+ * المتدرب يطلب من «شهاداتي» ← «بانتظار تأكيد السداد» (إيميل للمحاسب) ← المحاسب في تبويب «تعديل الاسم»:
+ * «تم السداد» أو «إعفاء من الرسوم» ← تُولَّد الشهادة بالاسم الجديد في متصفحه وتُعاد بنفس الرقم (adminApprove مع nameChange)،
+ * أو «رفض» بسبب يصل للمتدرب. صفحة التحقق تعرض الاسم الجديد تلقائياً. */
+function requestNameChange(token, id, d) {
+  const email = who_(token);
+  d = d || {};
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const r = myReq_(token, id);
+    if (r['الحالة'] !== ST.ISSUED) throw new Error('تعديل الاسم متاح للشهادات الصادرة فقط.');
+    if (r['تعديل الاسم'] === NC.PAY) throw new Error('لديك طلب تعديل اسم قيد المعالجة لهذه الشهادة.');
+    const nameEn = titleName_(d.nameEn);
+    if (!NAME_EN_RE.test(nameEn) || nameEn.split(' ').length < 2) throw new Error('اكتب الاسم الجديد بالإنجليزية (اسمان على الأقل، حروف إنجليزية فقط).');
+    if (nameEn === titleName_(r['الاسم بالإنجليزي'])) throw new Error('الاسم الجديد مطابق للاسم الحالي على الشهادة.');
+    const reason = safe_(clean_(d.reason), 300);
+    if (!reason) throw new Error('اكتب سبب التعديل باختصار (مثل: خطأ إملائي في الاسم).');
+    const data = { nameEn: nameEn, oldNameEn: r['الاسم بالإنجليزي'], reason: reason, at: now_() };
+    setCells_(TABS.REQ, r._row, { 'تعديل الاسم': NC.PAY, 'بيانات تعديل الاسم': JSON.stringify(data) });
+    log_(email, 'طلب تعديل اسم (المتدرب)', r['رقم الطلب'], r['الاسم بالإنجليزي'] + ' ← ' + nameEn);
+    const who = r['الاسم بالعربي'] || r['الاسم بالإنجليزي'];
+    try {
+      sendMail_({ to: setting_('FINANCE'), subject: 'طلب تعديل اسم (برسوم) | ' + who + ' | ' + r['اسم الدورة'],
+        htmlBody: shell_('طلب تعديل اسم على شهادة',
+          '<p><b>' + esc_(who) + '</b> (<span dir="ltr">' + esc_(r['البريد']) + '</span>' + (r['الجوال'] ? '، <span dir="ltr">' + esc_(String(r['الجوال']).replace(/^'/, '')) + '</span>' : '') + ') يطلب تعديل الاسم على شهادة <b>' + esc_(r['اسم الدورة']) + '</b>:</p>' +
+          '<p dir="ltr" style="text-align:right">' + esc_(r['الاسم بالإنجليزي']) + ' ← <b>' + esc_(nameEn) + '</b></p><p>السبب: ' + esc_(reason) + '</p>' +
+          '<p>بعد التواصل معه وتأكيد سداد الرسوم اختر «تم السداد» من لوحة الإدارة، فتُعاد الشهادة بالاسم الجديد تلقائياً.</p>' +
+          '<p><a href="' + appUrl_() + 'admin.html" style="display:inline-block;background:' + CONFIG.COLOR_PRIMARY + ';color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px">فتح لوحة الإدارة ← تعديل الاسم</a></p>') });
+      sendMail_({ to: r['البريد'], subject: 'استلمنا طلب تعديل الاسم | ' + r['اسم الدورة'],
+        htmlBody: shell_('استلمنا طلب تعديل الاسم',
+          '<p>مرحباً ' + esc_(who) + '،</p><p>استلمنا طلبك لتعديل الاسم على شهادة <b>' + esc_(r['اسم الدورة']) + '</b> إلى:</p>' +
+          '<p dir="ltr" style="text-align:right;font-size:17px"><b>' + esc_(nameEn) + '</b></p>' +
+          '<p>تعديل الاسم بعد الإصدار يترتب عليه رسوم، وسيتواصل معك فريق المالية لإتمام السداد. بعد التأكيد تصلك الشهادة المحدّثة بنفس رقمها.</p>') });
+    } catch (e) { console.error('name change mail: ' + e); }
+    return { ok: true, requests: getMyData(token).requests };
+  } finally { lock.releaseLock(); }
+}
+/** رفض طلب تعديل الاسم (أو إلغاؤه) مع سبب يصل للمتدرب. القبول يتم عبر adminApprove بعد توليد الشهادة الجديدة */
+function adminNameChangeReject(token, id, reason) {
+  const by = admin_(token);
+  const r = findReq_(id);
+  if (r['تعديل الاسم'] !== NC.PAY) throw new Error('لا يوجد طلب تعديل اسم قائم على هذه الشهادة.');
+  reason = safe_(clean_(reason), 500);
+  if (!reason) throw new Error('اكتبي سبب الرفض ليصل للمتدرب.');
+  const d = jsonOr_(r['بيانات تعديل الاسم'], {}) || {};
+  Object.assign(d, { outcome: 'rejected', reason: reason, by: by, doneAt: now_() });
+  setCells_(TABS.REQ, r._row, { 'تعديل الاسم': NC.REJECTED, 'بيانات تعديل الاسم': JSON.stringify(d) });
+  log_(by, 'رفض تعديل اسم', r['رقم الطلب'], reason);
+  sendMail_({ to: r['البريد'], subject: 'بخصوص طلب تعديل الاسم | ' + r['اسم الدورة'],
+    htmlBody: shell_('بخصوص طلب تعديل الاسم', '<p>مرحباً ' + esc_(r['الاسم بالعربي'] || r['الاسم بالإنجليزي']) + '،</p>' +
+      '<p>لم نتمكن من إتمام طلب تعديل الاسم على شهادة <b>' + esc_(r['اسم الدورة']) + '</b> للسبب التالي:</p>' +
+      '<p style="background:#FFF4E5;padding:12px 16px;border-radius:8px">' + esc_(reason) + '</p><p>شهادتك الحالية ما زالت صالحة. للاستفسار يمكنك الرد على هذه الرسالة.</p>') });
+  return 'رُفض طلب تعديل الاسم وأُبلغ المتدرب.';
+}
+
+/* ===================== لوحة المتابعة ===================== */
+function ymd_(s) { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; }
+/** أيام العمل بين تاريخين (الجمعة والسبت عطلة). يوم الطلب نفسه لا يُحسب */
+function workDays_(a, b) {
+  if (a == null || b == null || b < a) return null;
+  let n = 0;
+  for (let t = a + 864e5; t <= b; t += 864e5) { const w = new Date(t).getUTCDay(); if (w !== 5 && w !== 6) n++; }
+  return n;
+}
+function adminStats(token) {
+  admin_(token);
+  const all = rows_(TABS.REQ);
+  const today = ymd_(Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd'));
+  const month = Utilities.formatDate(new Date(), tz_(), 'yyyy-MM');
+  const prevMonth = (() => { const d = new Date(today); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); })();
+  const byStatus = {}; Object.keys(ST).forEach(k => byStatus[ST[k]] = 0);
+  let newToday = 0, new7 = 0, newMonth = 0, issuedMonth = 0, issuedPrev = 0, issuedTotal = 0;
+  const durations = [], overdue = [], courses = {}, reviewers = {};
+  const weeks = []; for (let i = 7; i >= 0; i--) weeks.push({ start: today - (i * 7 + 6) * 864e5, end: today - i * 7 * 864e5, req: 0, issued: 0 });
+  all.forEach(r => {
+    const st = r['الحالة']; byStatus[st] = (byStatus[st] || 0) + 1;
+    const rd = ymd_(r['تاريخ الطلب']), idt = ymd_(r['تاريخ الإصدار']);
+    if (rd === today) newToday++;
+    if (rd != null && rd > today - 7 * 864e5) new7++;
+    if (String(r['تاريخ الطلب']).slice(0, 7) === month) newMonth++;
+    const c = courses[r['اسم الدورة']] = courses[r['اسم الدورة']] || { name: r['اسم الدورة'], req: 0, issued: 0 };
+    c.req++;
+    weeks.forEach(w => { if (rd != null && rd >= w.start && rd <= w.end) w.req++; if (st === ST.ISSUED && idt != null && idt >= w.start && idt <= w.end) w.issued++; });
+    if (st === ST.ISSUED || st === ST.REVOKED) {
+      issuedTotal++; c.issued++;
+      const im = String(r['تاريخ الإصدار']).slice(0, 7);
+      if (im === month) { issuedMonth++; const who = r['اعتمدها'] || '—'; reviewers[who] = (reviewers[who] || 0) + 1; }
+      if (im === prevMonth) issuedPrev++;
+      const wd = workDays_(rd, idt);
+      if (wd != null && idt > today - 90 * 864e5) durations.push(wd);
+    }
+    if (st === ST.PENDING) {
+      const age = workDays_(rd, today);
+      if (age != null && age > 3) overdue.push({ id: r['رقم الطلب'], name: r['الاسم بالعربي'] || r['الاسم بالإنجليزي'], course: r['اسم الدورة'], date: String(r['تاريخ الطلب']).slice(0, 10), age: age, clearance: clrState_(r) });
+    }
+  });
+  durations.sort((a, b) => a - b);
+  const avg = durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length * 10) / 10 : null;
+  // الرضا
+  let survey = { count: 0, questions: [], avg5: null, nps: null };
+  try {
+    const sv = rows_(TABS.SURVEY);
+    const qs = CONFIG.SURVEY.map(q => {
+      const v = sv.map(x => Number(x[q.q])).filter(n => n >= 1 && n <= q.max);
+      return { q: q.q, section: q.section, max: q.max, n: v.length, avg: v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length * 100) / 100 : null, vals: v };
+    });
+    const five = qs.filter(q => q.max === 5 && q.avg != null);
+    const rec = qs.filter(q => q.max === 10)[0];
+    survey = {
+      count: sv.length,
+      questions: qs.map(q => ({ q: q.q, section: q.section, max: q.max, n: q.n, avg: q.avg })),
+      avg5: five.length ? Math.round(five.reduce((a, q) => a + q.avg, 0) / five.length * 100) / 100 : null,
+      // صافي نقاط الترويج على مقياس 1–10: المروّجون 9–10، والمنتقدون 6 فأقل
+      nps: rec && rec.vals.length ? Math.round((rec.vals.filter(v => v >= 9).length - rec.vals.filter(v => v <= 6).length) / rec.vals.length * 100) : null,
+    };
+  } catch (e) { console.error('stats survey: ' + e); }
+  let activity = [];
+  try { if (sheet_(TABS.LOG)) activity = rows_(TABS.LOG).slice(-40).reverse().map(x => ({ at: x['التاريخ'], by: x['بواسطة'], action: x['الإجراء'], id: x['رقم الطلب'], detail: x['تفاصيل'] })); }
+  catch (e) { console.error('stats log: ' + e); }
+  return {
+    generated: now_(), total: all.length, byStatus: byStatus,
+    clearancePending: all.filter(r => clrHolds_(r) && [ST.REJECTED, ST.REVOKED].indexOf(r['الحالة']) < 0).length,
+    nameChangePending: all.filter(r => r['تعديل الاسم'] === NC.PAY).length,
+    newToday: newToday, new7: new7, newMonth: newMonth,
+    issuedMonth: issuedMonth, issuedPrev: issuedPrev, issuedTotal: issuedTotal,
+    avgDays: avg, medianDays: durations.length ? durations[Math.floor(durations.length / 2)] : null,
+    within3: durations.length ? Math.round(durations.filter(x => x <= 3).length / durations.length * 100) : null, sample: durations.length,
+    overdue: overdue.sort((a, b) => b.age - a.age).slice(0, 25), overdueCount: overdue.length,
+    courses: Object.keys(courses).map(k => courses[k]).sort((a, b) => b.req - a.req).slice(0, 10),
+    reviewers: Object.keys(reviewers).map(k => ({ by: k, n: reviewers[k] })).sort((a, b) => b.n - a.n),
+    weeks: weeks.map(w => ({ start: new Date(w.start).toISOString().slice(0, 10), end: new Date(w.end).toISOString().slice(0, 10), req: w.req, issued: w.issued })),
+    survey: survey, activity: activity,
+  };
+}
 
 /* ===================== الاستيراد من Google Form (الطلبات القديمة) =====================
  * يقرأ شيت ردود الفورم (يجب أن يكون care@ قادراً على فتحه)، ويحوّل كل رد من تاريخ معيّن إلى طلب «بانتظار المراجعة».
@@ -770,6 +943,7 @@ function adminImport(token, url, fromDate) {
       }
       n++;
     });
+    if (n) log_(by, 'استيراد من الفورم', '', 'عدد الطلبات: ' + n);
     return 'عدد الطلبات المستوردة: ' + n + '، وصارت «بانتظار المراجعة».' + (f.rows.filter(x => !x.course).length ? ' بقيت ردود لدورات غير مفعّلة أو غير معروفة؛ تُستورد عند تفعيلها بإعادة الاستيراد.' : '');
   } finally { lock.releaseLock(); }
 }
@@ -802,12 +976,13 @@ function releaseHeld_(r) {
 }
 /** تحويل طلب للمخالصة يدوياً (برامج تحتاجها لبعض المتدربين فقط، مثل OBM-P) */
 function adminClearanceStart(token, id) {
-  admin_(token);
+  const by = admin_(token);
   const r = findReq_(id);
   if ([ST.PENDING, ST.HELD].indexOf(r['الحالة']) < 0) throw new Error('لا يمكن تحويل طلب حالته «' + r['الحالة'] + '» للمخالصة.');
   const s = clrState_(r);
   if (s && s !== CLR.NONE) throw new Error('الطلب في مسار المخالصة مسبقاً (' + s + ').');
   setCells_(TABS.REQ, r._row, { 'المخالصة': CLR.FINANCE });
+  log_(by, 'تحويل للمخالصة', r['رقم الطلب'], r['اسم الدورة']);
   notifyFinance_(r['رقم الطلب'], r['الاسم بالعربي'] || r['الاسم بالإنجليزي'], r['البريد'], r['اسم الدورة']);
   return 'حُوّل الطلب للمخالصة المالية، وأُبلغ المحاسب. لن تُرسل الشهادة للمتدرب إلا بعد توقيعه المخالصة (أو اختيار «لا يحتاج مخالصة»).';
 }
@@ -842,6 +1017,7 @@ function adminClearance(token, id, d) {
   if ([ST.REJECTED, ST.REVOKED].indexOf(r['الحالة']) >= 0) throw new Error('الطلب ' + r['الحالة'] + '.');
   if (d.outcome === 'none') { // مثل متدرب دفع المبلغ كاملاً من البداية
     const old0 = jsonOr_(r['بيانات المخالصة'], {});
+    log_(by, 'مخالصة: لا يحتاج', r['رقم الطلب'], r['اسم الدورة']);
     setCells_(TABS.REQ, r._row, { 'المخالصة': CLR.NONE, 'بيانات المخالصة': JSON.stringify(Object.assign(old0, { outcome: 'none', by: by, at: now_() })) });
     if (releaseHeld_(r)) return 'سُجّل «لا يحتاج مخالصة»، وأُرسلت الشهادة المعتمدة للمتدرب.';
     return 'سُجّل «لا يحتاج مخالصة». تُرسل الشهادة مباشرة عند اعتمادها.';
@@ -854,6 +1030,7 @@ function adminClearance(token, id, d) {
   });
   if (d.outcome === 'due') {
     setCells_(TABS.REQ, r._row, { 'المخالصة': CLR.DUE, 'بيانات المخالصة': JSON.stringify(data) });
+    log_(by, 'مخالصة: يوجد مبلغ', r['رقم الطلب'], r['اسم الدورة']);
     return 'سُجّل «يوجد مبلغ مستحق». بعد التواصل مع المتدرب والسداد اختاري «تم السداد» لإصدار المخالصة للتوقيع.';
   }
   if (['nodue', 'paid'].indexOf(d.outcome) < 0) throw new Error('اختاري نتيجة المخالصة.');
@@ -874,6 +1051,7 @@ function adminClearance(token, id, d) {
       '<p style="color:#666;font-size:13px">ادخل ببريدك هذا، ثم افتح «شهاداتي» واضغط «مراجعة وتوقيع المخالصة». تُرسل الشهادة إليك تلقائياً بعد التوقيع واعتمادها.</p>'),
   });
   log.push({ e: 'sent', at: now_(), to: r['البريد'] });
+  log_(by, d.outcome === 'paid' ? 'مخالصة: تم السداد' : 'مخالصة: لا يوجد مبلغ', r['رقم الطلب'], data.docId);
   setCells_(TABS.REQ, r._row, { 'سجل التوقيع': JSON.stringify(log) });
   return 'أُصدرت المخالصة (' + data.docId + ') وأُرسلت للمتدرب لتوقيعها.';
 }
@@ -934,6 +1112,7 @@ function clearanceSign(token, id, d) {
         htmlBody: shell_('تم توقيع مخالصة', '<p><b>' + esc_(data.name) + '</b> (<span dir="ltr">' + esc_(email) + '</span>) وقّع مخالصة برنامج <b>' + esc_(data.program) +
           '</b> بتاريخ ' + signedAt + '.</p><p>رقم المستند: <span dir="ltr">' + data.docId + '</span></p>') });
     } catch (e) { console.error('clearance mail: ' + e); }
+    log_(email, 'توقيع المخالصة (المتدرب)', r['رقم الطلب'], data.docId);
     releaseHeld_(r); // إطلاق الشهادة المعلّقة
     return { ok: true, requests: getMyData(token).requests };
   } finally { lock.releaseLock(); }
@@ -1067,7 +1246,7 @@ function shell_(title, inner) {
 function usDate_(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[2] + '/' + m[3] + '/' + m[1] : String(iso || ''); }
 
 /** إيميل الشهادة — النص المعتمد من مريم (الاقتراح «ب»، 2026-11-24) */
-function sendCertEmail_(to, r, certNo, blob, test) {
+function sendCertEmail_(to, r, certNo, blob, test, note) {
   const verify = verifyUrl_(certNo);
   const btn = (href, label, bg) => '<a href="' + href + '" style="display:inline-block;background:' + bg +
     ';color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;margin:4px 0 4px 8px">' + label + '</a>';
@@ -1084,6 +1263,7 @@ function sendCertEmail_(to, r, certNo, blob, test) {
     htmlBody: shell_('مبارك! 🎓',
       (test ? '<p style="background:#FFF4E5;padding:8px 12px;border-radius:8px">نسخة تجريبية للمراجِعة — لم تُرسل للمتدرب.</p>' : '') +
       '<p>مرحباً ' + esc_(r['الاسم بالعربي'] || r['الاسم بالإنجليزي']) + '،</p>' +
+      (note ? '<p style="background:#EAF0FF;padding:10px 14px;border-radius:8px">' + esc_(note) + '</p>' : '') +
       '<p>نهنئك لحصولك على شهادة التعليم المستمر في:<br><b style="font-size:17px;color:' + CONFIG.COLOR_DARK + '">' + esc_(r['اسم الدورة']) + '</b></p>' +
       '<table style="width:100%;border-collapse:collapse;background:#F5F8FF;border-radius:10px;margin:14px 0;font-size:14px">' +
         line('رقم الشهادة', certNo) + line('الاسم على الشهادة', r['الاسم بالإنجليزي']) +
@@ -1126,6 +1306,9 @@ const ACTIONS = {
   adminClearance: b => adminClearance(b.token, b.id, b.data),
   adminClearanceResend: b => adminClearanceResend(b.token, b.id),
   adminClearanceStart: b => adminClearanceStart(b.token, b.id),
+  adminNameChangeReject: b => adminNameChangeReject(b.token, b.id, b.reason),
+  adminStats: b => adminStats(b.token),
+  requestNameChange: b => requestNameChange(b.token, b.id, b.data),
   adminDownloadClearance: b => adminDownloadClearance(b.token, b.id),
   clearanceView: b => clearanceView(b.token, b.id),
   clearanceSign: b => clearanceSign(b.token, b.id, b.data),

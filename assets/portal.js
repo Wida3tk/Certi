@@ -65,16 +65,47 @@ async function loadPortal(preloaded) {
   } catch (e) { msg($('pMsg'), e.message, 'err'); }
 }
 
+let MINE = [], NC_ID = null;
+const ncNote = r => r.nameChange === NC.PAY ? '<div class="hint">✏️ طلب تعديل الاسم إلى <span dir="ltr">' + esc(r.nameChangeTo) + '</span>: بانتظار تأكيد السداد، وسيتواصل معك فريق المالية.</div>'
+  : r.nameChange === NC.REJECTED ? '<div class="hint">لم يُقبل طلب تعديل الاسم: ' + esc(r.nameChangeNote) + '</div>'
+  : r.nameChange === NC.DONE ? '<div class="hint">✔ عُدّل الاسم على الشهادة.</div>' : '';
+/* ---------- طلب تعديل الاسم ---------- */
+function showNc(on) {
+  $('pNc').classList.toggle('hide', !on); $('pMine').classList.toggle('hide', on);
+  document.querySelector('#vPortal .tabs').classList.toggle('hide', on);
+}
+function openNc(id) {
+  const r = MINE.find(x => x.id === id); if (!r) return;
+  NC_ID = id; $('ncCourse').textContent = 'الشهادة: ' + r.course + ' (' + r.certNo + ')';
+  $('ncOld').value = r.nameEn || ''; $('ncNew').value = ''; $('ncWhy').value = ''; $('ncPreview').textContent = ''; clearMsg($('ncMsg'));
+  showNc(true); window.scrollTo(0, 0); $('ncNew').focus();
+}
+$('ncNew').oninput = () => { const v = titleName($('ncNew').value); $('ncPreview').textContent = v ? 'سيظهر على الشهادة: ' + v : ''; };
+$('bNcBack').onclick = () => showNc(false);
+$('bNcSend').onclick = async () => {
+  const b = $('bNcSend'); busy(b, true);
+  try {
+    if (!/^[A-Za-z][A-Za-z .'\-]+$/.test($('ncNew').value.trim())) throw new Error('اكتب الاسم الجديد بحروف إنجليزية.');
+    if (!confirm('سيُرسل طلب تعديل الاسم إلى: ' + titleName($('ncNew').value) + '\nتعديل الاسم برسوم يتواصل معك بشأنها فريق المالية. متابعة؟')) { busy(b, false); return; }
+    const res = await api('requestNameChange', { token: SESSION.token, id: NC_ID, data: { nameEn: $('ncNew').value, reason: $('ncWhy').value } });
+    renderMine(res.requests); showNc(false);
+    msg($('mineMsg') || $('pMsg'), 'استلمنا طلب تعديل الاسم، وسيتواصل معك فريق المالية بخصوص الرسوم.', 'ok');
+  } catch (e) { msg($('ncMsg'), e.message, 'err'); }
+  busy(b, false);
+};
+
 function renderMine(list) {
   if (!list.length) { $('mineList').innerHTML = '<p class="hint">لا توجد طلبات بعد.</p>'; return; }
   const clrNote = r => !r.clearance || r.clearance === CLR.SIGNED || r.clearance === CLR.NONE ? '' :
     '<div class="hint">المخالصة المالية: ' + esc(r.clearance === CLR.SIGN ? 'جاهزة لتوقيعك' : r.clearance === CLR.DUE ? 'بانتظار إتمام السداد' : 'قيد الإعداد لدى المالية') + '</div>';
   $('mineList').innerHTML = '<div class="tablewrap"><table><tr><th>الدورة</th><th>تاريخ الطلب</th><th>الحالة</th><th></th></tr>' +
     list.map(r => '<tr><td>' + esc(r.course) + '</td><td>' + esc(r.date) + '</td><td>' + pill(r.status === ST.HELD ? 'معتمدة، تُرسل بعد المخالصة' : r.status) +
-      (r.note ? '<div class="hint">السبب: ' + esc(r.note) + '</div>' : '') + clrNote(r) + '</td><td class="row-actions">' +
+      (r.note ? '<div class="hint">السبب: ' + esc(r.note) + '</div>' : '') + clrNote(r) + ncNote(r) + '</td><td class="row-actions">' +
       (r.clearance === CLR.SIGN ? '<button data-sign="' + esc(r.id) + '" class="sign">مراجعة وتوقيع المخالصة</button>' : '') +
       (r.status === ST.ISSUED ? '<button data-c="' + esc(r.certNo) + '" class="dl">تحميل الشهادة</button>' : '') +
-      (r.clearanceFile ? '<button data-clr="' + esc(r.id) + '" class="ghost dlc">المخالصة الموقّعة</button>' : '') + '</td></tr>').join('') + '</table></div>';
+      (r.clearanceFile ? '<button data-clr="' + esc(r.id) + '" class="ghost dlc">المخالصة الموقّعة</button>' : '') +
+      (r.status === ST.ISSUED && r.nameChange !== NC.PAY ? '<button data-nc="' + esc(r.id) + '" class="ghost ncb">طلب تعديل الاسم</button>' : '') + '</td></tr>').join('') + '</table></div>';
+  MINE = list;
   document.querySelectorAll('.dl').forEach(b => b.onclick = async () => {
     busy(b, true);
     try { const f = await api('downloadMyCert', { token: SESSION.token, certNo: b.dataset.c }); downloadB64(f.name, f.data); }
@@ -88,6 +119,7 @@ function renderMine(list) {
     busy(b, false);
   });
   document.querySelectorAll('.sign').forEach(b => b.onclick = () => openSign(b.dataset.sign, b));
+  document.querySelectorAll('.ncb').forEach(b => b.onclick = () => openNc(b.dataset.nc));
   // تنبيه في أعلى الطلب الجديد إن كانت هناك مخالصة بانتظار التوقيع
   const waiting = list.filter(r => r.clearance === CLR.SIGN).length;
   $('signAlert') && $('signAlert').remove();

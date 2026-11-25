@@ -41,10 +41,10 @@ const form = (over = {}) => Object.assign({ courseId: 'persuasion-influence', na
   platformEmail: 'sara.platform@x.com', city: 'الرياض', phone: '0501234567',
   survey: SURVEY, comment: 'ممتازة' }, over);
 
-test('setup ينشئ تبويبي الطلبات والرضا فقط', () => {
+test('setup ينشئ تبويبات الطلبات والرضا والسجل فقط', () => {
   const env = fresh();
   const names = env.spreadsheets[env.props.SHEET_ID].getSheets().map(s => s.name);
-  assert.strictEqual(names.sort().join(), ['الرضا', 'الطلبات'].sort().join());
+  assert.strictEqual(names.sort().join(), ['الرضا', 'الطلبات', 'السجل'].sort().join());
   assert.ok(env.props.CERTS_FOLDER && !env.props.PROOFS_FOLDER);
 });
 
@@ -566,6 +566,81 @@ test('مخالصة اختيارية (OBM-P) بالتحويل اليدوي، و«
   env.api('adminApprove', { token: ta, data: { id: id3, certNo: n3.certNo, pdf: PDF, start: '2026-01-01', end: '2026-11-20' } });
   assert.strictEqual(env.api('adminGet', { token: ta, id: id3 }).data.status, 'صادرة');
   assert.ok(env.mails.some(m => m.to === 'q@x.com' && /🎓/.test(m.subject)));
+});
+
+test('تعديل الاسم برسوم: طلب المتدرب ← المحاسب ← إعادة الإصدار بنفس الرقم، والرفض، والسجل', () => {
+  const env = fresh();
+  const t = login(env, 'nc@x.com'); const ta = adminLogin(env, ADMIN);
+  const id = env.api('submitRequest', { token: t, data: form({ nameEn: 'Sara Ahmad Al-Harbi' }) }).data.id;
+  // قبل الإصدار: غير مسموح
+  assert.match(env.api('requestNameChange', { token: t, id, data: { nameEn: 'Sara Ahmed Al-Harbi', reason: 'خطأ' } }).error, /الصادرة/);
+  const num = env.api('adminReserveNumber', { token: ta, id }).data;
+  assert.strictEqual(env.api('adminApprove', { token: ta, data: { id, certNo: num.certNo, pdf: PDF, start: '2026-01-01', end: '2026-01-20' } }).ok, true);
+  // تحقق المدخلات
+  assert.match(env.api('requestNameChange', { token: t, id, data: { nameEn: 'sara ahmad al-harbi', reason: 'x' } }).error, /مطابق/);
+  assert.match(env.api('requestNameChange', { token: t, id, data: { nameEn: 'Sara Ahmed Al-Harbi' } }).error, /سبب/);
+  assert.match(env.api('requestNameChange', { token: t, id, data: { nameEn: 'سارة', reason: 'x' } }).error, /بالإنجليزية/);
+  // متدرب آخر لا يطلب على شهادة غيره
+  assert.strictEqual(env.api('requestNameChange', { token: login(env, 'other@x.com'), id, data: { nameEn: 'Other Name', reason: 'x' } }).ok, false);
+  env.mails.length = 0;
+  const rq = env.api('requestNameChange', { token: t, id, data: { nameEn: 'SARA AHMED AL-HARBI', reason: 'خطأ إملائي' } });
+  assert.strictEqual(rq.ok, true, rq.error);
+  assert.strictEqual(rq.data.requests[0].nameChange, 'بانتظار تأكيد السداد'); assert.strictEqual(rq.data.requests[0].nameChangeTo, 'Sara Ahmed Al-Harbi');
+  assert.ok(env.mails.some(m => m.to === 'raljalajil@sulukera.com' && /تعديل اسم/.test(m.subject)));
+  assert.ok(env.mails.some(m => m.to === 'nc@x.com' && /استلمنا/.test(m.subject)));
+  assert.match(env.api('requestNameChange', { token: t, id, data: { nameEn: 'Sara A Al-Harbi', reason: 'x' } }).error, /قيد المعالجة/);
+  let g = env.api('adminGet', { token: ta, id }).data;
+  assert.strictEqual(g.nameChange, 'بانتظار تأكيد السداد'); assert.strictEqual(g.nameChangeData.oldNameEn, 'Sara Ahmad Al-Harbi');
+  // المتدرب لا يستطيع إتمامها بنفسه
+  assert.strictEqual(env.api('adminNameChangeReject', { token: t, id, reason: 'x' }).ok, false);
+  // تم السداد ← إعادة الإصدار بنفس الرقم والاسم الجديد
+  env.mails.length = 0;
+  const ap = env.api('adminApprove', { token: ta, data: { id, certNo: num.certNo, pdf: PDF, start: '2026-01-01', end: '2026-01-20', resend: true, nameChange: 'paid', nameEn: 'Sara Ahmed Al-Harbi' } });
+  assert.strictEqual(ap.ok, true, ap.error); assert.match(ap.data, /عُدّل الاسم/);
+  g = env.api('adminGet', { token: ta, id }).data;
+  assert.strictEqual(g.nameChange, 'تم التعديل'); assert.strictEqual(g.nameEn, 'Sara Ahmed Al-Harbi'); assert.strictEqual(g.certNo, num.certNo);
+  assert.ok(env.mails.some(m => m.to === 'nc@x.com' && /🎓/.test(m.subject) && /تم تعديل الاسم/.test(m.htmlBody)));
+  assert.strictEqual(env.api('verify', { certNo: num.certNo }).data.nameEn || env.api('verify', { certNo: num.certNo }).data.name, 'Sara Ahmed Al-Harbi');
+  // nameChange بلا طلب قائم ← مرفوض
+  assert.match(env.api('adminApprove', { token: ta, data: { id, certNo: num.certNo, pdf: PDF, start: '2026-01-01', end: '2026-01-20', resend: true, nameChange: 'paid' } }).error, /لا يوجد طلب/);
+  // طلب ثانٍ ثم رفض
+  env.api('requestNameChange', { token: t, id, data: { nameEn: 'Sarah Ahmed Al-Harbi', reason: 'تهجئة' } });
+  assert.match(env.api('adminNameChangeReject', { token: ta, id, reason: '' }).error, /سبب/);
+  env.mails.length = 0;
+  assert.strictEqual(env.api('adminNameChangeReject', { token: ta, id, reason: 'لم يتم السداد' }).ok, true);
+  assert.ok(env.mails.some(m => m.to === 'nc@x.com' && /بخصوص طلب تعديل الاسم/.test(m.subject)));
+  const mine = env.api('getMyData', { token: t }).data.requests[0];
+  assert.strictEqual(mine.nameChange, 'مرفوض'); assert.strictEqual(mine.nameChangeNote, 'لم يتم السداد'); assert.strictEqual(mine.nameEn, 'Sara Ahmed Al-Harbi');
+  // السجل
+  const acts = env.sheet('السجل').data.slice(1).map(r => r[2]);
+  ['إصدار', 'طلب تعديل اسم (المتدرب)', 'تعديل الاسم وإعادة الإصدار', 'رفض تعديل اسم'].forEach(a => assert.ok(acts.includes(a), a));
+});
+
+test('لوحة المتابعة: الأعداد ومدة الإصدار بأيام العمل والمتأخر والرضا والسجل — للفريق فقط', () => {
+  const env = fresh();
+  const t = login(env, 's1@x.com'); const ta = adminLogin(env, ADMIN);
+  const id = env.api('submitRequest', { token: t, data: form() }).data.id;
+  const num = env.api('adminReserveNumber', { token: ta, id }).data;
+  env.api('adminApprove', { token: ta, data: { id, certNo: num.certNo, pdf: PDF, start: '2026-01-01', end: '2026-01-20' } });
+  // طلب قديم متأخر (الأحد 2026-11-01)
+  const t2 = login(env, 's2@x.com');
+  const id2 = env.api('submitRequest', { token: t2, data: form({ courseIds: ['specialist'] }) }).data.id;
+  const sh = env.sheet('الطلبات'); const col = sh.data[0].indexOf('تاريخ الطلب');
+  sh.data.find(r => r[0] === id2)[col] = '2026-11-01 10:00';
+  assert.strictEqual(env.api('adminStats', { token: t }).ok, false, 'trainee blocked');
+  const s = env.api('adminStats', { token: ta });
+  assert.strictEqual(s.ok, true, s.error);
+  const d = s.data;
+  assert.strictEqual(d.total, 2); assert.strictEqual(d.byStatus['صادرة'], 1); assert.strictEqual(d.byStatus['بانتظار المراجعة'], 1);
+  assert.strictEqual(d.issuedTotal, 1); assert.strictEqual(d.sample, 1); assert.strictEqual(d.avgDays, 0); assert.strictEqual(d.within3, 100);
+  assert.ok(d.overdueCount >= 1 && d.overdue[0].id === id2 && d.overdue[0].age > 3);
+  assert.strictEqual(d.survey.count, 2); assert.ok(d.survey.avg5 >= 1 && d.survey.avg5 <= 5); assert.ok(d.survey.nps >= -100 && d.survey.nps <= 100);
+  assert.strictEqual(d.weeks.length, 8); assert.ok(d.courses.length >= 1);
+  assert.ok(d.activity.some(a => a.action === 'إصدار'));
+  // أيام العمل: الخميس ← الأحد = يوم عمل واحد (الجمعة والسبت عطلة)
+  const u = (y, m, dd) => Date.UTC(y, m - 1, dd);
+  assert.strictEqual(env.ctx.workDays_(u(2026, 11, 26), u(2026, 11, 29)), 1);
+  assert.strictEqual(env.ctx.workDays_(u(2026, 11, 22), u(2026, 11, 26)), 4);
 });
 
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));

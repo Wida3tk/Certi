@@ -103,7 +103,25 @@
 
   <div id="pMine" class="card hide">
     <h2>شهاداتي وطلباتي</h2>
+    <div id="mineMsg" class="msg" role="status"></div>
     <div id="mineList"><p class="hint">جارٍ التحميل...</p></div>
+  </div>
+
+  <!-- طلب تعديل الاسم على شهادة صادرة (برسوم) -->
+  <div id="pNc" class="card narrow hide">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 style="margin:0">طلب تعديل الاسم</h2><button class="ghost" id="bNcBack" type="button">رجوع إلى شهاداتي</button>
+    </div>
+    <p class="hint" id="ncCourse" style="margin-top:10px"></p>
+    <label>الاسم الحالي على الشهادة</label><input id="ncOld" dir="ltr" disabled>
+    <label for="ncNew">الاسم الجديد بالإنجليزية <span class="hint">كما تريد أن يظهر على الشهادة</span></label>
+    <input id="ncNew" dir="ltr" maxlength="80" placeholder="e.g. Sara Ahmed Al-Harbi">
+    <div class="hint" id="ncPreview" dir="ltr" style="text-align:right"></div>
+    <label for="ncWhy">سبب التعديل</label>
+    <input id="ncWhy" maxlength="300" placeholder="مثال: خطأ إملائي في الاسم">
+    <div class="warnbox">💳 تعديل الاسم بعد الإصدار يترتب عليه رسوم. بعد إرسال الطلب يتواصل معك فريق المالية لإتمام السداد، ثم تصلك الشهادة المحدّثة بنفس رقمها، وتعرض صفحة التحقق الاسم الجديد.</div>
+    <div class="actions"><button id="bNcSend" type="button">إرسال طلب التعديل</button></div>
+    <div id="ncMsg" class="msg" role="alert"></div>
   </div>
 
   <!-- مراجعة المخالصة المالية وتوقيعها -->

@@ -5,7 +5,10 @@ function showAdmin(on) { $('vLogin').classList.toggle('hide', on); $('vAdmin').c
 
 document.querySelectorAll('#aTabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#aTabs button').forEach(x => x.classList.toggle('on', x === b));
-  FILTER = b.dataset.f; renderList();
+  FILTER = b.dataset.f;
+  const dash = FILTER === '__dash';
+  $('aListCard').classList.toggle('hide', dash); $('aDash').classList.toggle('hide', !dash);
+  if (dash) loadDash(); else renderList();
 });
 $('aSearch').oninput = () => renderList();
 $('bRefresh').onclick = () => loadAdmin();
@@ -49,7 +52,9 @@ function renderList() {
   const q = $('aSearch').value.trim().toLowerCase();
   const nc = ALL.filter(needsClr).length;
   $('cClr').textContent = nc || ''; $('cClr').classList.toggle('hide', !nc);
-  const l = ALL.filter(r => (!FILTER || (FILTER === '__clr' ? needsClr(r) : r.status === FILTER)) &&
+  const nn = ALL.filter(r => r.nameChange === NC.PAY).length;
+  $('cNc').textContent = nn || ''; $('cNc').classList.toggle('hide', !nn);
+  const l = ALL.filter(r => (!FILTER || (FILTER === '__clr' ? needsClr(r) : FILTER === '__nc' ? r.nameChange === NC.PAY : r.status === FILTER)) &&
     (!q || [r.nameEn, r.nameAr, r.email, r.certNo, r.id, r.course].some(x => String(x || '').toLowerCase().includes(q))));
   $('aList').innerHTML = !l.length ? '<p class="hint">لا توجد طلبات.</p>' :
     '<table><tr><th>التاريخ</th><th>الاسم</th><th>الدورة</th><th>الحالة</th></tr>' +
@@ -58,10 +63,53 @@ function renderList() {
       (r.type ? '<div class="hint">' + esc(r.type) + '</div>' : '') +
       (r.group ? '<div class="hint">🗂️ ضمن طلب مجمّع (' + ALL.filter(x => x.group === r.group).length + ')</div>' : '') + '</td><td>' + pill(r.status) +
       (r.clearance ? '<div class="hint">المخالصة: ' + esc(r.clearance) + '</div>' : '') +
+      (r.nameChange === NC.PAY ? '<div class="hint">✏️ تعديل الاسم: ' + esc(r.nameChange) + '</div>' : '') +
       (r.certNo ? '<div class="hint" dir="ltr" style="text-align:right">' + esc(r.certNo) + '</div>' : '') + '</td></tr>').join('') + '</table>';
   document.querySelectorAll('tr.click').forEach(tr => tr.onclick = () => openReq(tr.dataset.id));
 }
-$('bCloseD').onclick = () => { $('aDetail').classList.add('hide'); $('aListCard').classList.remove('hide'); $('aTabs').classList.remove('hide'); loadAdmin(); };
+$('bCloseD').onclick = () => { $('aDetail').classList.add('hide'); $('aTabs').classList.remove('hide');
+  if (FILTER === '__dash') { $('aDash').classList.remove('hide'); loadDash(); } else { $('aListCard').classList.remove('hide'); loadAdmin(); } };
+
+/* ---------- تعديل الاسم بعد الإصدار (برسوم) ---------- */
+function renderNc(r) {
+  const box = $('dNc'), d = r.nameChangeData || {};
+  if (!r.nameChange) { box.classList.add('hide'); box.innerHTML = ''; return; }
+  box.classList.remove('hide');
+  const names = '<div dir="ltr" style="text-align:right;margin:6px 0"><span class="hint">' + esc(d.oldNameEn || '') + '</span> ← <b>' + esc(d.nameEn || '') + '</b></div>';
+  const head = '<b>طلب تعديل الاسم</b> ' + pill(r.nameChange);
+  if (r.nameChange !== NC.PAY) {
+    box.innerHTML = head + names + '<p class="hint" style="margin:0">' + (r.nameChange === NC.DONE
+      ? 'أُعيد إصدار الشهادة بالاسم الجديد في ' + esc(d.doneAt || '') + (d.outcome === 'waived' ? ' (إعفاء من الرسوم)' : ' بعد السداد') + ' — ' + esc(d.by || '')
+      : 'رُفض: ' + esc(d.reason || '') + ' — ' + esc(d.by || '')) + '</p>';
+    return;
+  }
+  box.innerHTML = head + names +
+    '<p class="hint" style="margin:0 0 10px">السبب: ' + esc(d.reason || '') + ' · طُلب في ' + esc(d.at || '') + '. بعد تأكيد السداد تُولَّد الشهادة بالاسم الجديد وتُرسل للمتدرب بنفس الرقم، وتعرض صفحة التحقق الاسم الجديد.</p>' +
+    '<div class="actions"><button class="ok" data-nc="paid">تم السداد — إعادة الإصدار بالاسم الجديد</button><button class="ghost" data-nc="waived">إعفاء من الرسوم — إعادة الإصدار</button><button class="danger" data-nc="reject">رفض الطلب</button></div>' +
+    '<div id="ncRej" class="hide"><label for="ncReason">سبب الرفض <span class="hint">(يصل للمتدرب)</span></label><textarea id="ncReason" placeholder="مثال: لم يتم سداد رسوم التعديل."></textarea>' +
+    '<div class="actions"><button class="danger" id="bNcRejGo">تأكيد الرفض</button></div></div>';
+  box.querySelectorAll('[data-nc]').forEach(b => b.onclick = async () => {
+    const o = b.dataset.nc;
+    if (o === 'reject') { $('ncRej').classList.toggle('hide'); $('ncReason').focus(); return; }
+    if (!confirm('ستُعاد الشهادة ' + r.certNo + ' بالاسم «' + d.nameEn + '» وتُرسل إلى ' + r.email + (o === 'waived' ? ' (إعفاء من الرسوم)' : '') + '. متابعة؟')) return;
+    box.querySelectorAll('button').forEach(x => x.disabled = true);
+    try {
+      $('dNameEn').value = d.nameEn;
+      msg($('dMsg'), 'جارٍ توليد الشهادة بالاسم الجديد...', 'info');
+      await genCert();
+      msg($('dMsg'), 'جارٍ إعادة الإصدار والإرسال...', 'info');
+      const m = await api('adminApprove', { token: SESSION.token, data: { id: r.id, certNo: GEN.certNo, pdf: GEN.pdf, resend: true, nameChange: o,
+        template: GEN.template, start: GEN.start, end: GEN.end, nameEn: GEN.nameEn } });
+      await refreshAndOpen(r.id); msg($('dMsg'), m, 'ok');
+    } catch (e) { msg($('dMsg'), e.message, 'err'); box.querySelectorAll('button').forEach(x => x.disabled = false); }
+  });
+  $('bNcRejGo').onclick = async () => {
+    const b = $('bNcRejGo'); busy(b, true);
+    try { const m = await api('adminNameChangeReject', { token: SESSION.token, id: r.id, reason: $('ncReason').value }); await refreshAndOpen(r.id); msg($('dMsg'), m, 'ok'); }
+    catch (e) { msg($('dMsg'), e.message, 'err'); }
+    busy(b, false);
+  };
+}
 
 /* ---------- المخالصة المالية (للمحاسب والفريق) ---------- */
 const needsClr = r => r.clearance && r.clearance !== CLR.SIGNED && r.clearance !== CLR.NONE && [ST.REJECTED, ST.REVOKED].indexOf(r.status) < 0;
@@ -155,7 +203,7 @@ async function refreshAndOpen(id) {
   await openReq(id);
 }
 async function openReq(id) {
-  $('aListCard').classList.add('hide'); $('aTabs').classList.add('hide'); $('aDetail').classList.remove('hide');
+  $('aListCard').classList.add('hide'); $('aDash').classList.add('hide'); $('aTabs').classList.add('hide'); $('aDetail').classList.remove('hide');
   $('dTitle').textContent = 'جارٍ التحميل...'; $('prev').innerHTML = ''; $('dActs').innerHTML = '';
   $('dRej').classList.add('hide'); $('dReason').value = ''; $('dPreset').value = ''; $('dInfo').innerHTML = '';
   clearMsg($('dMsg')); GEN = null; CUR = null;
@@ -184,7 +232,7 @@ async function openReq(id) {
       row('البريد', r.email, true) + row('بريد المنصة', r.platformEmail, true) + row('الجوال', r.phone, true) + row('المدينة', r.city) +
       row('رقم الطلب', r.id, true) + row('تاريخ الطلب', r.date, true) + row('رقم الشهادة', r.certNo, true) +
       row('آخر إجراء بواسطة', r.approvedBy, true) + row('ملاحظات', r.note) + groupInfo(r);
-    renderClr(r);
+    renderClr(r); renderNc(r);
     checkDays();
     const canGen = r.status === ST.PENDING || r.status === ST.ISSUED || r.status === ST.HELD;
     $('bGen').classList.toggle('hide', !canGen);
@@ -236,9 +284,8 @@ $('bRejGo').onclick = async () => {
   busy(b, false);
 };
 
-$('bGen').onclick = async () => {
-  const b = $('bGen'); busy(b, true); msg($('dMsg'), 'جارٍ توليد الشهادة...', 'info');
-  try {
+/** توليد الشهادة في المتصفح بالبيانات الحالية في النموذج (يحجز الرقم أولاً) */
+async function genCert() {
     const nameEn = $('dNameEn').value.replace(/\s+/g, ' ').trim();
     if (!nameEn) throw new Error('الاسم فارغ.');
     if (!$('dStart').value || !$('dEnd').value) throw new Error('حددي تاريخ البدء وتاريخ الانتهاء.');
@@ -251,6 +298,12 @@ $('bGen').onclick = async () => {
       start: $('dStart').value, end: $('dEnd').value, certNo: num.certNo, verifyUrl: num.verifyUrl });
     GEN = { certNo: num.certNo, pdf: out.pdfBase64, nameEn: nameEn, start: $('dStart').value, end: $('dEnd').value , template: $('dTpl').value };
     $('prev').innerHTML = ''; $('prev').appendChild(out.canvas);
+    return num;
+}
+$('bGen').onclick = async () => {
+  const b = $('bGen'); busy(b, true); msg($('dMsg'), 'جارٍ توليد الشهادة...', 'info');
+  try {
+    const num = await genCert();
     msg($('dMsg'), 'راجعي المعاينة. رقم الشهادة: ' + num.certNo + ' — رابط التحقق: ' + num.verifyUrl, 'info');
     renderActs();
   } catch (e) { msg($('dMsg'), e.message, 'err'); }
@@ -333,3 +386,72 @@ $('fNewPass').onsubmit = async e => {
   try { await _api('adminMe', { token: saved.token }); signedIn(saved); }
   catch (e) { aStore.del(); showAdmin(false); showForm('fLogin'); }
 })();
+
+/* ---------- لوحة المتابعة ---------- */
+const DASH_C = { req: '#D97706', issued: '#0C40FB' }; // سلسلتان (مُتحقق منهما لعمى الألوان)
+const fmtN = n => n == null ? '—' : String(n);
+function tile(label, value, sub, warn) {
+  return '<div class="kpi' + (warn ? ' kpi-warn' : '') + '"><div class="kpi-l">' + label + '</div><div class="kpi-v">' + value + '</div>' + (sub ? '<div class="kpi-s">' + sub + '</div>' : '') + '</div>';
+}
+async function loadDash() {
+  const el = $('aDash');
+  if (!el.innerHTML) el.innerHTML = '<div class="card"><p class="hint">جارٍ تحميل المتابعة...</p></div>';
+  try { renderDash(await api('adminStats', { token: SESSION.token })); }
+  catch (e) { el.innerHTML = '<div class="card"><div class="msg err" style="display:block">' + esc(e.message) + '</div></div>'; }
+}
+function renderDash(d) {
+  const S = d.byStatus || {};
+  const diff = d.issuedMonth - d.issuedPrev;
+  const tiles = '<div class="kpis">' +
+    tile('بانتظار المراجعة', fmtN(S[ST.PENDING]), d.overdueCount ? '⚠️ ' + d.overdueCount + ' تجاوزت 3 أيام عمل' : 'لا متأخر', d.overdueCount > 0) +
+    tile('مخالصات معلّقة', fmtN(d.clearancePending), 'بانتظار المالية أو السداد أو التوقيع') +
+    tile('طلبات تعديل الاسم', fmtN(d.nameChangePending), 'بانتظار تأكيد السداد', d.nameChangePending > 0) +
+    tile('صدرت هذا الشهر', fmtN(d.issuedMonth), 'الشهر الماضي: ' + d.issuedPrev + (d.issuedPrev || d.issuedMonth ? (diff >= 0 ? ' (+' + diff + ')' : ' (' + diff + ')') : '')) +
+    tile('طلبات جديدة', fmtN(d.new7), 'آخر 7 أيام · اليوم: ' + d.newToday + ' · هذا الشهر: ' + d.newMonth) +
+    tile('متوسط مدة الإصدار', d.avgDays == null ? '—' : d.avgDays + ' <small>يوم عمل</small>',
+      d.within3 == null ? 'لا شهادات بعد' : d.within3 + '% خلال 3 أيام عمل (آخر 90 يوماً، ' + d.sample + ' شهادة)') +
+    '</div>';
+
+  // الطلبات مقابل الإصدار أسبوعياً
+  const W = d.weeks || [], max = Math.max(1, ...W.map(w => Math.max(w.req, w.issued)));
+  const md = s => s.slice(8, 10) + '/' + s.slice(5, 7);
+  const weekChart = '<div class="card"><h3>الطلبات والإصدار أسبوعياً <span class="hint">(آخر 8 أسابيع)</span></h3>' +
+    '<div class="legend"><span><i style="background:' + DASH_C.req + '"></i>طلبات جديدة</span><span><i style="background:' + DASH_C.issued + '"></i>شهادات صدرت</span></div>' +
+    '<div class="wchart" role="img" aria-label="الطلبات والشهادات الصادرة لكل أسبوع">' + W.map(w =>
+      '<div class="wcol" title="' + md(w.start) + ' – ' + md(w.end) + '\nطلبات جديدة: ' + w.req + '\nشهادات صدرت: ' + w.issued + '">' +
+        '<div class="wbars"><div class="wbar" style="height:' + (w.req / max * 100) + '%;background:' + DASH_C.req + '"><span>' + (w.req || '') + '</span></div>' +
+        '<div class="wbar" style="height:' + (w.issued / max * 100) + '%;background:' + DASH_C.issued + '"><span>' + (w.issued || '') + '</span></div></div>' +
+        '<div class="wlab" dir="ltr">' + md(w.start) + '</div></div>').join('') + '</div></div>';
+
+  const overdue = '<div class="card"><h3>طلبات متأخرة <span class="hint">(تجاوزت 3 أيام عمل بانتظار المراجعة)</span></h3>' +
+    (!d.overdue.length ? '<p class="hint">لا توجد طلبات متأخرة. 👏</p>' :
+      '<div class="tablewrap"><table><tr><th>تاريخ الطلب</th><th>المتدرب</th><th>الدورة</th><th>أيام العمل</th></tr>' +
+      d.overdue.map(o => '<tr class="click" data-open="' + esc(o.id) + '"><td dir="ltr" style="text-align:right">' + esc(o.date) + '</td><td>' + esc(o.name) + '</td><td>' + esc(o.course) +
+        (o.clearance ? '<div class="hint">المخالصة: ' + esc(o.clearance) + '</div>' : '') + '</td><td><span class="pill p-wait">' + o.age + '</span></td></tr>').join('') +
+      '</table></div>' + (d.overdueCount > d.overdue.length ? '<p class="hint">يُعرض أقدم ' + d.overdue.length + ' من ' + d.overdueCount + '.</p>' : '')) + '</div>';
+
+  const cmax = Math.max(1, ...d.courses.map(c => c.req));
+  const courses = '<div class="card"><h3>الدورات الأكثر طلباً</h3>' + (!d.courses.length ? '<p class="hint">لا طلبات بعد.</p>' :
+    d.courses.map(c => '<div class="hrow" title="طلبات: ' + c.req + ' · صدرت: ' + c.issued + '"><div class="hname">' + esc(c.name) + '</div>' +
+      '<div class="htrack"><div class="hbar" style="width:' + (c.req / cmax * 100) + '%"></div></div><div class="hval">' + c.req + ' <span class="hint">(' + c.issued + ' صدرت)</span></div></div>').join('')) + '</div>';
+
+  const team = '<div class="card"><h3>إنجاز الفريق هذا الشهر</h3>' + (!d.reviewers.length ? '<p class="hint">لم تصدر شهادات هذا الشهر بعد.</p>' :
+    '<table>' + d.reviewers.map(x => '<tr><td dir="ltr" style="text-align:right">' + esc(x.by) + '</td><td><b>' + x.n + '</b> شهادة</td></tr>').join('') + '</table>') + '</div>';
+
+  const sv = d.survey || {};
+  const survey = '<div class="card"><h3>رضا المتدربين <span class="hint">(' + (sv.count || 0) + ' رداً)</span></h3>' +
+    (!sv.count ? '<p class="hint">لا ردود بعد.</p>' :
+      '<div class="kpis kpis-2">' + tile('متوسط التقييم', sv.avg5 == null ? '—' : sv.avg5 + ' <small>من 5</small>', 'متوسط أسئلة التقييم العشرة') +
+        tile('صافي نقاط الترويج (NPS)', sv.nps == null ? '—' : (sv.nps > 0 ? '+' : '') + sv.nps, 'من −100 إلى +100: الموصون (9–10) ناقص غير الراضين (6 فأقل)') + '</div>' +
+      sv.questions.filter(q => q.max === 5).map(q => '<div class="hrow"><div class="hname">' + esc(q.q) + '</div>' +
+        '<div class="htrack"><div class="hbar" style="width:' + ((q.avg || 0) / 5 * 100) + '%"></div></div><div class="hval">' + (q.avg == null ? '—' : q.avg.toFixed(2)) + '</div></div>').join('')) + '</div>';
+
+  const act = '<div class="card act"><h3>سجل النشاط <span class="hint">(آخر الإجراءات)</span></h3>' + (!d.activity.length ? '<p class="hint">لا يوجد نشاط مسجّل بعد. يبدأ التسجيل من هذا التحديث.</p>' :
+    '<div class="tablewrap"><table><tr><th>الوقت</th><th>بواسطة</th><th>الإجراء</th><th>التفاصيل</th></tr>' +
+    d.activity.map(a => '<tr' + (a.id ? ' class="click" data-open="' + esc(a.id) + '"' : '') + '><td dir="ltr" style="text-align:right;white-space:nowrap">' + esc(a.at) + '</td><td dir="ltr" style="text-align:right">' + esc(String(a.by).replace(/@sulukera\.com$/, '')) + '</td><td>' + esc(a.action) + '</td><td>' + esc(a.detail) + '</td></tr>').join('') +
+    '</table></div>') + '</div>';
+
+  $('aDash').innerHTML = '<div class="dash-head"><span class="hint">آخر تحديث: ' + esc(d.generated) + ' · إجمالي الطلبات: ' + d.total + '</span><button class="ghost" id="bDashRef">تحديث</button></div>' +
+    tiles + weekChart + '<div class="grid2 dash-grid">' + overdue + courses + '</div><div class="grid2 dash-grid">' + survey + team + '</div>' + act;
+  $('bDashRef').onclick = () => { const b = $('bDashRef'); busy(b, true); loadDash().finally(() => busy(b, false)); };
+}

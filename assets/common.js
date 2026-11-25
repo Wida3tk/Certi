@@ -16,9 +16,10 @@ function msg(el, t, kind) { el.textContent = t; el.className = 'msg ' + (kind ||
 function clearMsg(el) { el.textContent = ''; el.className = 'msg'; }
 function busy(btn, on) { if (btn) { btn.disabled = on; btn.classList.toggle('busy', !!on); } }
 const ST = { PENDING: 'بانتظار المراجعة', ISSUED: 'صادرة', REJECTED: 'مرفوضة', REVOKED: 'ملغاة', HELD: 'معتمدة بانتظار المخالصة' };
+const NC = { PAY: 'بانتظار تأكيد السداد', DONE: 'تم التعديل', REJECTED: 'مرفوض' };
 const CLR = { FINANCE: 'بانتظار المالية', DUE: 'بانتظار السداد', SIGN: 'بانتظار التوقيع', SIGNED: 'موقّعة', NONE: 'لا تحتاج مخالصة' };
 function pill(s) {
-  const c = s === ST.ISSUED || s === CLR.SIGNED || s === CLR.NONE ? 'p-ok' : s === ST.REJECTED ? 'p-no' : s === ST.REVOKED ? 'p-rev' : 'p-wait';
+  const c = s === ST.ISSUED || s === CLR.SIGNED || s === CLR.NONE || s === NC.DONE ? 'p-ok' : s === ST.REJECTED || s === NC.REJECTED ? 'p-no' : s === ST.REVOKED ? 'p-rev' : 'p-wait';
   return '<span class="pill ' + c + '">' + esc(s) + '</span>';
 }
 /** توحيد الاسم الإنجليزي: أول حرف من كل اسم كبير والباقي صغير (REEM AL-HARBI ← Reem Al-Harbi) */
