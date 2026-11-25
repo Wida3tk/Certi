@@ -83,8 +83,25 @@ const server = http.createServer((req, res) => {
   const v = env.api('verify', { certNo }).data;
   assert.strictEqual(v.status, 'valid'); assert.strictEqual(v.name, 'Omar Salem Al-Dosari');
   assert.match(await page.textContent('#dNc'), /تم التعديل/);
-  // 4) لوحة المتابعة
+  // 3ب) شهادات الإشراف: إصدار مباشر لمستلمَين
   await page.click('#bCloseD');
+  await page.click('#aTabs button[data-f="__sup"]');
+  await page.waitForSelector('#aSup:not(.hide)');
+  await page.fill('#supTitle', 'Ethical Use of Artificial Intelligence in ABA'); await page.fill('#supStart', '2026-08-12');
+  await page.fill('#supList', 'yasmeen alsuqair, yas@example.com\nMuna Aboalhoul\tmuna@example.com\nbad line');
+  assert.match(await page.textContent('#supParsed'), /جاهز: 2[\s\S]*bad line/);
+  await page.click('#bSupGo'); assert.match(await page.textContent('#supMsg'), /صحّحي/);
+  await page.fill('#supList', 'yasmeen alsuqair, yas@example.com\nMuna Aboalhoul\tmuna@example.com');
+  await page.click('#bSupPrev'); await page.waitForSelector('#supPrev canvas', { timeout: 60000 });
+  env.mails.length = 0;
+  await page.click('#bSupGo');
+  await page.waitForFunction(() => /صدرت 2 من 2/.test(document.querySelector('#supMsg').textContent), null, { timeout: 90000 });
+  assert.strictEqual(env.mails.filter(m => /🎓/.test(m.subject)).length, 2);
+  assert.ok(env.mails.some(m => m.to === 'yas@example.com'));
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth) <= 1280, 'sup page not wider than viewport');
+  await page.screenshot({ path: path.join(OUT, 'sup.png'), fullPage: true });
+  await page.click('#aTabs button[data-f="بانتظار المراجعة"]');
+  // 4) لوحة المتابعة
   await page.click('#aTabs button[data-f="__dash"]');
   await page.waitForSelector('#aDash .kpis');
   const dash = await page.textContent('#aDash');

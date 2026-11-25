@@ -138,7 +138,7 @@ tr.click { cursor: pointer; } tr.click:hover { background: #F7F9FF; }
 .src b { color: var(--navy); }
 .tag { font-size: 13px; color: var(--blue); font-weight: 600; margin-top: 4px; }
 .tag.none { color: var(--warn); }
-#prev canvas { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 12px; }
+#prev canvas, #supPrev canvas { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 12px; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
 .hide { display: none !important; }
 .drop { border: 2px dashed #C3CBE0; border-radius: 16px; padding: 22px; text-align: center; color: var(--muted); cursor: pointer; background: #FAFBFE; }

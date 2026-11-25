@@ -1,0 +1,60 @@
+{
+ "fields": [
+  {
+   "key": "nameEn",
+   "x": 1754.0,
+   "y": 1050.8,
+   "baseline": "alphabetic",
+   "size": 220.8,
+   "font": "Tangerine",
+   "weight": "700",
+   "color": "#0C40FB",
+   "align": "center",
+   "maxWidth": 2300
+  },
+  {
+   "key": "title",
+   "x": 1754.0,
+   "y": 1445,
+   "baseline": "middle",
+   "size": 123.7,
+   "font": "Cardo",
+   "weight": "400",
+   "color": "#1E222F",
+   "align": "center",
+   "wrap": 2550,
+   "maxLines": 2,
+   "lineHeight": 1.12
+  },
+  {
+   "key": "held",
+   "x": 1754.0,
+   "y": 1738,
+   "baseline": "alphabetic",
+   "size": 75.0,
+   "font": "Cardo",
+   "weight": "700",
+   "color": "#0C40FB",
+   "align": "center",
+   "maxWidth": 2700
+  },
+  {
+   "key": "qr",
+   "x": 2210,
+   "y": 1930,
+   "size": 250,
+   "color": "#1F2440",
+   "bg": "#FFFFFF"
+  },
+  {
+   "key": "certNo",
+   "x": 2335,
+   "y": 2235,
+   "size": 34,
+   "font": "Cardo",
+   "weight": "700",
+   "color": "#1F2440",
+   "align": "center"
+  }
+ ]
+}

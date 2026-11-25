@@ -6,9 +6,9 @@ function showAdmin(on) { $('vLogin').classList.toggle('hide', on); $('vAdmin').c
 document.querySelectorAll('#aTabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#aTabs button').forEach(x => x.classList.toggle('on', x === b));
   FILTER = b.dataset.f;
-  const dash = FILTER === '__dash';
-  $('aListCard').classList.toggle('hide', dash); $('aDash').classList.toggle('hide', !dash);
-  if (dash) loadDash(); else renderList();
+  const dash = FILTER === '__dash', sup = FILTER === '__sup';
+  $('aListCard').classList.toggle('hide', dash || sup); $('aDash').classList.toggle('hide', !dash); $('aSup').classList.toggle('hide', !sup);
+  if (dash) loadDash(); else if (!sup) renderList();
 });
 $('aSearch').oninput = () => renderList();
 $('bRefresh').onclick = () => loadAdmin();
@@ -205,7 +205,7 @@ async function refreshAndOpen(id) {
   await openReq(id);
 }
 async function openReq(id) {
-  $('aListCard').classList.add('hide'); $('aDash').classList.add('hide'); $('aTabs').classList.add('hide'); $('aDetail').classList.remove('hide');
+  $('aListCard').classList.add('hide'); $('aDash').classList.add('hide'); $('aSup').classList.add('hide'); $('aTabs').classList.add('hide'); $('aDetail').classList.remove('hide');
   $('dTitle').textContent = 'جارٍ التحميل...'; $('prev').innerHTML = ''; $('dActs').innerHTML = '';
   $('dRej').classList.add('hide'); $('dReason').value = ''; $('dPreset').value = ''; $('dInfo').innerHTML = '';
   clearMsg($('dMsg')); GEN = null; CUR = null;
@@ -238,7 +238,9 @@ async function openReq(id) {
       row('آخر إجراء بواسطة', r.approvedBy, true) + row('ملاحظات', r.note) + groupInfo(r);
     renderClr(r); renderNc(r);
     checkDays();
-    const canGen = !noTpl && (r.status === ST.PENDING || r.status === ST.ISSUED || r.status === ST.HELD);
+    const canGen = !noTpl && !r.sup && (r.status === ST.PENDING || r.status === ST.ISSUED || r.status === ST.HELD);
+    $('dNoTpl').classList.toggle('hide', !noTpl && !r.sup);
+    $('dNoTpl').textContent = r.sup ? 'شهادة إشراف صدرت من تبويب «شهادات الإشراف». لإعادتها بتعديل، ألغيها ثم أصدري واحدة جديدة.' : 'لا يوجد قالب لهذه الشهادة بعد. الطلب والمخالصة يمشيان كالمعتاد، والإصدار بعد إضافة القالب.';
     $('bGen').classList.toggle('hide', !canGen);
     ['dNameEn', 'dStart', 'dEnd'].forEach(i => $(i).disabled = !canGen);
     renderActs();
@@ -459,3 +461,68 @@ function renderDash(d) {
     tiles + weekChart + '<div class="grid2 dash-grid">' + overdue + courses + '</div><div class="grid2 dash-grid">' + survey + team + '</div>' + act;
   $('bDashRef').onclick = () => { const b = $('bDashRef'); busy(b, true); loadDash().finally(() => busy(b, false)); };
 }
+
+/* ---------- شهادات الإشراف: إصدار مباشر بلا طلب ---------- */
+const SUP_M = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function supForm() {
+  const kind = (document.querySelector('input[name="supKind"]:checked') || {}).value;
+  const title = $('supTitle').value.replace(/\s+/g, ' ').trim(), start = $('supStart').value, end = $('supEnd').value, ceus = $('supCeus').value.trim();
+  if (!title) throw new Error('اكتبي عنوان الشهادة.');
+  if (/[؀-ۿ]/.test(title)) throw new Error('عنوان الشهادة يُكتب بالإنجليزية كما يُطبع.');
+  if (!start) throw new Error('حددي التاريخ.');
+  if (end && end < start) throw new Error('«إلى تاريخ» قبل التاريخ.');
+  if (!/^\d{1,3}(\.\d{1,2})?$/.test(ceus)) throw new Error('اكتبي الساعات رقماً، مثل 0.5.');
+  const f = iso => iso.slice(8, 10) + ' ' + SUP_M[+iso.slice(5, 7) - 1] + ' ' + iso.slice(0, 4);
+  const held = (end && end !== start ? 'Held From ' + f(start) + ' to ' + f(end) : 'Held on ' + f(start)) + ' | ' + ceus + ' Learning CEUs';
+  return { kind, title, start, end: end && end !== start ? end : '', ceus, held };
+}
+function supPeople() {
+  const ok = [], bad = [];
+  $('supList').value.split(/\n/).map(l => l.trim()).filter(Boolean).forEach(l => {
+    const m = l.match(/[^\s,;\t<>]+@[^\s,;\t<>]+\.[^\s,;\t<>]+/);
+    const name = titleName(l.replace(m ? m[0] : '', '').replace(/[<>]/g, '').replace(/[,;\t]+/g, ' ').replace(/\s+/g, ' ').trim());
+    if (!m || !/^[A-Za-zÀ-ɏ][A-Za-zÀ-ɏ .'\-]{1,79}$/.test(name)) bad.push(l); else ok.push({ nameEn: name, email: m[0].toLowerCase() });
+  });
+  return { ok, bad };
+}
+$('supList').oninput = () => {
+  const p = supPeople();
+  $('supParsed').innerHTML = !p.ok.length && !p.bad.length ? '' : 'جاهز: <b>' + p.ok.length + '</b>' +
+    (p.bad.length ? ' · <span style="color:var(--err)">أسطر غير صحيحة (اسم إنجليزي + بريد): ' + p.bad.map(esc).join('، ') + '</span>' : '');
+  $('bSupGo').textContent = 'إصدار وإرسال' + (p.ok.length ? ' (' + p.ok.length + ')' : '');
+};
+$('bSupPrev').onclick = async () => {
+  const b = $('bSupPrev'); busy(b, true); clearMsg($('supMsg'));
+  try {
+    const c = supForm(), p = supPeople();
+    const out = await generateCertificate('sup-' + c.kind, { nameEn: (p.ok[0] || {}).nameEn || 'Recipient Name', title: c.title, held: c.held,
+      certNo: 'SLK-0000-000000', verifyUrl: location.origin + '/?v=SLK-0000-000000' });
+    $('supPrev').innerHTML = '<p class="hint">معاينة (الرقم ورمز QR الحقيقيان يُضافان عند الإصدار):</p>'; $('supPrev').appendChild(out.canvas);
+  } catch (e) { msg($('supMsg'), e.message, 'err'); }
+  busy(b, false);
+};
+$('bSupGo').onclick = async () => {
+  const b = $('bSupGo'); clearMsg($('supMsg'));
+  let c, p;
+  try { c = supForm(); p = supPeople(); if (!p.ok.length) throw new Error('أضيفي مستلماً واحداً على الأقل (الاسم بالإنجليزية، البريد).');
+    if (p.bad.length) throw new Error('صحّحي الأسطر غير الصحيحة أو احذفيها أولاً.'); }
+  catch (e) { msg($('supMsg'), e.message, 'err'); return; }
+  if (!confirm('ستُصدر ' + p.ok.length + ' شهادة «' + c.title + '» وتُرسل لكل مستلم على بريده. متابعة؟')) return;
+  busy(b, true); $('bSupPrev').disabled = true;
+  $('supOut').innerHTML = '<table><tr><th>الاسم</th><th>البريد</th><th>النتيجة</th></tr>' + p.ok.map((x, i) =>
+    '<tr><td dir="ltr" style="text-align:right">' + esc(x.nameEn) + '</td><td dir="ltr" style="text-align:right">' + esc(x.email) + '</td><td id="supR' + i + '" class="hint">بالانتظار</td></tr>').join('') + '</table>';
+  let done = 0;
+  for (let i = 0; i < p.ok.length; i++) {
+    const cell = $('supR' + i); cell.textContent = 'جارٍ الإصدار...';
+    try {
+      const r = await api('adminSupReserve', { token: SESSION.token, data: Object.assign({}, c, p.ok[i]) });
+      const out = await generateCertificate(r.template, { nameEn: r.nameEn, title: r.title, held: r.held, certNo: r.certNo, verifyUrl: r.verifyUrl });
+      await api('adminSupSend', { token: SESSION.token, data: { id: r.id, certNo: r.certNo, pdf: out.pdfBase64 } });
+      cell.innerHTML = '<span class="pill p-ok">صدرت وأُرسلت</span> <span dir="ltr" class="hint">' + esc(r.certNo) + '</span>'; done++;
+    } catch (e) { cell.innerHTML = '<span class="pill p-no">تعذّر</span> ' + esc(e.message); }
+  }
+  msg($('supMsg'), 'صدرت ' + done + ' من ' + p.ok.length + ' شهادة.' + (done < p.ok.length ? ' أعيدي إصدار من تعذّر بعد التصحيح.' : ''), done === p.ok.length ? 'ok' : 'err');
+  if (done === p.ok.length) { $('supList').value = ''; $('supParsed').innerHTML = ''; $('bSupGo').textContent = 'إصدار وإرسال'; }
+  busy(b, false); $('bSupPrev').disabled = false;
+  try { ALL = await api('adminList', { token: SESSION.token }); } catch (e) { }
+};

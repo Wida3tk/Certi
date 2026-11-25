@@ -418,7 +418,7 @@ function logout(token) {
 /* ===================== المتدرب ===================== */
 function getMyData(token) {
   const email = who_(token);
-  const mine = rows_(TABS.REQ).filter(r => cleanEmail_(r['البريد']) === email);
+  const mine = rows_(TABS.REQ).filter(r => cleanEmail_(r['البريد']) === email && r['الحالة'] !== SUP.DRAFT);
   return {
     email: email,
     courses: activeCourses_(),
@@ -431,7 +431,7 @@ function getMyData(token) {
       issued: r['تاريخ الإصدار'],
       note: r['الحالة'] === ST.REJECTED ? r['ملاحظات'] : '',
       clearance: clrState_(r), clearanceFile: !!r['ملف المخالصة'],
-      nameEn: r['الاسم بالإنجليزي'], nameChange: r['تعديل الاسم'] || '',
+      nameEn: r['الاسم بالإنجليزي'], nameChange: r['تعديل الاسم'] || '', sup: r['معرّف الدورة'] === SUP.ID,
       nameChangeTo: (jsonOr_(r['بيانات تعديل الاسم'], {}) || {}).nameEn || '',
       nameChangeNote: r['تعديل الاسم'] === NC.REJECTED ? ((jsonOr_(r['بيانات تعديل الاسم'], {}) || {}).reason || '') : '',
     })).reverse(),
@@ -564,7 +564,7 @@ function reqView_(r) {
     clearance: clrState_(r), clearanceData: jsonOr_(r['بيانات المخالصة'], null), clearanceSigned: r['تاريخ التوقيع'] || '',
     clearanceFile: !!r['ملف المخالصة'],
     // يمكن تحويل طلب البرنامج الطويل للمخالصة يدوياً (مثل OBM-P: بعض المتدربين فقط)
-    nameChange: r['تعديل الاسم'] || '', nameChangeData: jsonOr_(r['بيانات تعديل الاسم'], null),
+    nameChange: r['تعديل الاسم'] || '', nameChangeData: jsonOr_(r['بيانات تعديل الاسم'], null), sup: r['معرّف الدورة'] === SUP.ID,
     canStartClr: (!clrState_(r) || clrState_(r) === CLR.NONE) && [ST.PENDING, ST.HELD].indexOf(r['الحالة']) >= 0,
   };
 }
@@ -588,16 +588,83 @@ function adminReserveNumber(token, id) {
     if (!r) throw new Error('الطلب غير موجود.');
     if ([ST.REJECTED, ST.REVOKED].indexOf(r['الحالة']) >= 0) throw new Error('الطلب ' + r['الحالة'] + '.');
     if (r['رقم الشهادة']) return { certNo: r['رقم الشهادة'], verifyUrl: verifyUrl_(r['رقم الشهادة']) };
-    const year = Utilities.formatDate(new Date(), tz_(), 'yyyy');
-    const pre = CONFIG.CERT_PREFIX + '-' + year + '-';
-    const max = all.map(x => String(x['رقم الشهادة'] || ''))
-      .filter(n => n.indexOf(pre) === 0).map(n => Number(n.slice(pre.length)) || 0)
-      .reduce((a, b) => Math.max(a, b), 0);
-    const certNo = pre + ('00000' + (max + 1)).slice(-6);
+    const certNo = nextCertNo_(all);
     setCells_(TABS.REQ, r._row, { 'رقم الشهادة': certNo });
     SpreadsheetApp.flush();
     return { certNo: certNo, verifyUrl: verifyUrl_(certNo) };
   } finally { lock.releaseLock(); }
+}
+
+function nextCertNo_(all) {
+  const pre = CONFIG.CERT_PREFIX + '-' + Utilities.formatDate(new Date(), tz_(), 'yyyy') + '-';
+  const max = all.map(x => String(x['رقم الشهادة'] || ''))
+    .filter(n => n.indexOf(pre) === 0).map(n => Number(n.slice(pre.length)) || 0)
+    .reduce((a, b) => Math.max(a, b), 0);
+  return pre + ('00000' + (max + 1)).slice(-6);
+}
+
+/* ===================== شهادات الإشراف (إصدار مباشر بلا طلب) =====================
+ * الفريق يدخل: النوع (حضور جلسة نقاش / تقديم دورة)، العنوان، التاريخ (يوم أو من–إلى)، الساعات، والمستلمين (الاسم + البريد).
+ * لكل مستلم: adminSupReserve (سجل + رقم شهادة) ← التوليد في المتصفح بقالب sup-<النوع> ← adminSupSend (حفظ + إيميل الشهادة فقط).
+ * لا تظهر للمتدربين كخيار طلب، ولا يُرسل «استلمنا طلبك». الشهادة تظهر للمستلم في «شهاداتي» ويتحقق منها برمز QR كغيرها. */
+const SUP = { ID: 'supervision', DRAFT: 'قيد الإصدار', KINDS: { session: 'حضور جلسة نقاش', course: 'تقديم دورة' } };
+function supHeld_(d) {
+  const M = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const f = iso => { const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/); return m[3] + ' ' + M[Number(m[2]) - 1] + ' ' + m[1]; };
+  return (d.end && d.end !== d.start ? 'Held From ' + f(d.start) + ' to ' + f(d.end) : 'Held on ' + f(d.start)) + ' | ' + d.ceus + ' Learning CEUs';
+}
+function supCheck_(d) {
+  d = d || {};
+  const out = { kind: String(d.kind || ''), title: clean_(d.title), start: String(d.start || ''), end: String(d.end || ''), ceus: clean_(d.ceus) };
+  if (!SUP.KINDS[out.kind]) throw new Error('اختاري نوع الشهادة.');
+  if (!out.title || !/^[\x20-\x7E\u00C0-\u024F]{3,140}$/.test(out.title)) throw new Error('اكتبي عنوان الشهادة بالإنجليزية (كما يُطبع، حتى 140 حرفاً).');
+  if (!isIsoDate_(out.start)) throw new Error('حددي التاريخ.');
+  if (out.end && (!isIsoDate_(out.end) || out.end < out.start)) throw new Error('تاريخ النهاية قبل تاريخ البداية.');
+  if (!/^\d{1,3}(\.\d{1,2})?$/.test(out.ceus)) throw new Error('اكتبي عدد الساعات (Learning CEUs) رقماً، مثل 0.5.');
+  out.held = supHeld_(out);
+  return out;
+}
+/** إنشاء سجل شهادة إشراف وحجز رقمها (يعيد ما يلزم للتوليد في المتصفح) */
+function adminSupReserve(token, d) {
+  const by = admin_(token);
+  const c = supCheck_(d);
+  const nameEn = titleName_(d && d.nameEn), email = cleanEmail_(d && d.email);
+  if (!NAME_EN_RE.test(nameEn)) throw new Error('اسم غير صالح: ' + (d && d.nameEn || '') + ' (يُكتب بالإنجليزية).');
+  if (!isEmail_(email)) throw new Error('بريد غير صالح: ' + (d && d.email || ''));
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const all = rows_(TABS.REQ);
+    const certNo = nextCertNo_(all);
+    const id = 'SUP-' + Utilities.formatDate(new Date(), tz_(), 'yyMMdd') + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 5).toUpperCase();
+    appendObj_(TABS.REQ, REQ_HEADERS.concat(['بيانات الإشراف', 'المصدر']), {
+      'رقم الطلب': id, 'تاريخ الطلب': now_(), 'الاسم بالإنجليزي': safe_(nameEn, 80), 'الاسم بالعربي': safe_(clean_(d.nameAr), 80), 'البريد': email,
+      'معرّف الدورة': SUP.ID, 'اسم الدورة': c.title, 'اسم الدورة (EN)': c.title, 'نوع البرنامج': 'شهادة إشراف — ' + SUP.KINDS[c.kind],
+      'الحالة': SUP.DRAFT, 'تاريخ البدء': c.start, 'تاريخ الإتمام': c.end || c.start, 'القالب': 'sup-' + c.kind, 'رقم الشهادة': certNo,
+      'اعتمدها': by, 'بيانات الإشراف': JSON.stringify(c), 'المصدر': 'إصدار مباشر (إشراف)',
+    });
+    SpreadsheetApp.flush();
+    return { id: id, certNo: certNo, verifyUrl: verifyUrl_(certNo), template: 'sup-' + c.kind, nameEn: nameEn, title: c.title, held: c.held };
+  } finally { lock.releaseLock(); }
+}
+/** حفظ شهادة الإشراف المولّدة وإرسالها للمستلم */
+function adminSupSend(token, d) {
+  const by = admin_(token);
+  d = d || {};
+  const r = findReq_(d.id);
+  if (r['معرّف الدورة'] !== SUP.ID || r['الحالة'] !== SUP.DRAFT) throw new Error('هذه الشهادة ليست قيد الإصدار.');
+  if (r['رقم الشهادة'] !== d.certNo) throw new Error('رقم الشهادة غير مطابق.');
+  const fileName = (d.certNo + ' - ' + r['الاسم بالإنجليزي'] + ' - ' + r['اسم الدورة (EN)']).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').slice(0, 150).trim() + '.pdf';
+  const blob = Utilities.newBlob(Utilities.base64Decode(String(d.pdf || '')), 'application/pdf', fileName);
+  if (blob.getBytes().slice(0, 4).map(b => String.fromCharCode(b)).join('') !== '%PDF') throw new Error('ملف الشهادة غير صالح.');
+  const file = DriveApp.getFolderById(prop_('CERTS_FOLDER')).createFile(blob);
+  setCells_(TABS.REQ, r._row, { 'الحالة': ST.ISSUED, 'ملف الشهادة': file.getId(), 'تاريخ الإصدار': now_(), 'اعتمدها': by });
+  const c = jsonOr_(r['بيانات الإشراف'], {});
+  sendCertEmail_(cleanEmail_(r['البريد']), r, d.certNo, blob, false, '', {
+    lead: c.kind === 'course' ? 'نشكرك على تقديمك، وهذه شهادتك عن:' : 'نشكرك على حضورك، وهذه شهادتك عن:',
+    dateRow: ['التاريخ', c.held ? c.held.split(' | ')[0].replace(/^Held (on|From) /, '').replace(' to ', ' – ') : ''],
+    extraRows: [['الساعات', (c.ceus || '') + ' Learning CEUs']], noDateNote: true });
+  log_(by, 'إصدار شهادة إشراف', r['رقم الطلب'], d.certNo + ' — ' + r['اسم الدورة'] + ' — ' + r['الاسم بالإنجليزي']);
+  return 'صدرت ' + d.certNo + ' وأُرسلت إلى ' + r['البريد'];
 }
 
 /** الاعتماد: حفظ الملف + الإيميل + تحديث السجل. test=true يرسل للمراجِعة فقط ولا يغيّر شيئاً */
@@ -610,6 +677,7 @@ function adminApprove(token, d) {
   if (!r['رقم الشهادة'] || r['رقم الشهادة'] !== d.certNo) throw new Error('رقم الشهادة غير مطابق. أعيدي التوليد.');
   if (!isIsoDate_(d.start) || !isIsoDate_(d.end)) throw new Error('حددي تاريخ البدء وتاريخ الإتمام.');
   if (d.start > d.end) throw new Error('تاريخ البدء بعد تاريخ الإتمام.');
+  if (r['معرّف الدورة'] === SUP.ID) throw new Error('شهادات الإشراف تُصدر من تبويب «شهادات الإشراف».');
   const course = courseById_(r['معرّف الدورة']);
   if (course && course.minDays && daysInclusive_(d.start, d.end) < course.minDays)
     throw new Error('مدة الإتمام ' + daysInclusive_(d.start, d.end) + ' أيام، وهذه الشهادة تشترط ' + course.minDays + ' أيام على الأقل. لا يمكن إصدارها.');
@@ -718,6 +786,7 @@ function requestNameChange(token, id, d) {
   try {
     const r = myReq_(token, id);
     if (r['الحالة'] !== ST.ISSUED) throw new Error('تعديل الاسم متاح للشهادات الصادرة فقط.');
+    if (r['معرّف الدورة'] === SUP.ID) throw new Error('لتعديل الاسم على شهادة الإشراف تواصل معنا على care@sulukera.com.');
     if (r['تعديل الاسم'] === NC.PAY) throw new Error('لديك طلب تعديل اسم قيد المعالجة لهذه الشهادة.');
     const nameEn = titleName_(d.nameEn);
     if (!NAME_EN_RE.test(nameEn) || nameEn.split(' ').length < 2) throw new Error('اكتب الاسم الجديد بالإنجليزية (اسمان على الأقل، حروف إنجليزية فقط).');
@@ -1282,7 +1351,8 @@ function shell_(title, inner) {
 function usDate_(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[2] + '/' + m[3] + '/' + m[1] : String(iso || ''); }
 
 /** إيميل الشهادة — النص المعتمد من مريم (الاقتراح «ب»، 2026-11-24) */
-function sendCertEmail_(to, r, certNo, blob, test, note) {
+function sendCertEmail_(to, r, certNo, blob, test, note, o) {
+  o = o || {};
   const verify = verifyUrl_(certNo);
   const btn = (href, label, bg) => '<a href="' + href + '" style="display:inline-block;background:' + bg +
     ';color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;margin:4px 0 4px 8px">' + label + '</a>';
@@ -1300,14 +1370,15 @@ function sendCertEmail_(to, r, certNo, blob, test, note) {
       (test ? '<p style="background:#FFF4E5;padding:8px 12px;border-radius:8px">نسخة تجريبية للمراجِعة — لم تُرسل للمتدرب.</p>' : '') +
       '<p>مرحباً ' + esc_(r['الاسم بالعربي'] || r['الاسم بالإنجليزي']) + '،</p>' +
       (note ? '<p style="background:#EAF0FF;padding:10px 14px;border-radius:8px">' + esc_(note) + '</p>' : '') +
-      '<p>نهنئك لحصولك على شهادة التعليم المستمر في:<br><b style="font-size:17px;color:' + CONFIG.COLOR_DARK + '">' + esc_(r['اسم الدورة']) + '</b></p>' +
+      '<p>' + (o.lead || 'نهنئك لحصولك على شهادة التعليم المستمر في:') + '<br><b style="font-size:17px;color:' + CONFIG.COLOR_DARK + '">' + esc_(r['اسم الدورة']) + '</b></p>' +
       '<table style="width:100%;border-collapse:collapse;background:#F5F8FF;border-radius:10px;margin:14px 0;font-size:14px">' +
         line('رقم الشهادة', certNo) + line('الاسم على الشهادة', r['الاسم بالإنجليزي']) +
-        (start && end ? line('مدة الدورة', start + ' – ' + end) : '') + '</table>' +
+        (o.dateRow ? line(o.dateRow[0], o.dateRow[1]) : start && end ? line('مدة الدورة', start + ' – ' + end) : '') +
+        (o.extraRows || []).map(x => line(x[0], x[1])).join('') + '</table>' +
       '<p>📎 مرفق لك الشهادة، ويمكنك تحميلها في أي وقت من «شهاداتي»، والتحقق منها برمز QR المطبوع عليها.</p>' +
       '<p>' + btn(verify, 'التحقق من الشهادة', CONFIG.COLOR_PRIMARY) + btn(appUrl_(), 'شهاداتي', CONFIG.COLOR_DARK) + '</p>' +
-      '<p style="background:#FFF8EB;padding:12px 16px;border-radius:8px;font-size:14px"><b>ملاحظة حول التاريخ:</b> التاريخ مكتوب بالصيغة الأمريكية المعتمدة لدى البورد: ' +
-        'الشهر ثم اليوم ثم السنة (MM/DD/YYYY). فمثلاً <span dir="ltr">' + ex.split(' تعني ')[0] + '</span> تعني ' + ex.split(' تعني ')[1] + '.</p>' +
+      (o.noDateNote ? '' : '<p style="background:#FFF8EB;padding:12px 16px;border-radius:8px;font-size:14px"><b>ملاحظة حول التاريخ:</b> التاريخ مكتوب بالصيغة الأمريكية المعتمدة لدى البورد: ' +
+        'الشهر ثم اليوم ثم السنة (MM/DD/YYYY). فمثلاً <span dir="ltr">' + ex.split(' تعني ')[0] + '</span> تعني ' + ex.split(' تعني ')[1] + '.</p>') +
       '<p>يسعدنا أن نراك في برامج تدريبية قادمة تدعم مسارك المهني والعملي.</p>' +
       '<p>مع أطيب التمنيات،<br>فريق سلوكيرا</p>'),
   });
@@ -1343,6 +1414,8 @@ const ACTIONS = {
   adminClearanceResend: b => adminClearanceResend(b.token, b.id),
   adminClearanceStart: b => adminClearanceStart(b.token, b.id),
   adminClearancePreview: b => adminClearancePreview(b.token, b.id),
+  adminSupReserve: b => adminSupReserve(b.token, b.data),
+  adminSupSend: b => adminSupSend(b.token, b.data),
   adminNameChangeReject: b => adminNameChangeReject(b.token, b.id, b.reason),
   adminStats: b => adminStats(b.token),
   requestNameChange: b => requestNameChange(b.token, b.id, b.data),

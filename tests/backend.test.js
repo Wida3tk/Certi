@@ -670,4 +670,45 @@ test('أنواع الشهادات: شهادة واحدة لتصنيفي تحلي
   assert.strictEqual(env.api('adminClearance', { token: ta, id, data: { outcome: 'none' } }).ok, true);
 });
 
+test('شهادات الإشراف: إصدار مباشر بلا طلب ← إيميل الشهادة فقط ← تحقق وشهاداتي، وممنوع على غير الفريق', () => {
+  const env = fresh();
+  const ta = adminLogin(env, ADMIN);
+  const base = { kind: 'session', title: 'Ethical Use of Artificial Intelligence in ABA', start: '2026-08-12', ceus: '0.5' };
+  const t = login(env, 'yas@x.com');
+  assert.strictEqual(env.api('adminSupReserve', { token: t, data: Object.assign({ nameEn: 'X Y', email: 'a@x.com' }, base) }).ok, false, 'trainee blocked');
+  assert.match(env.api('adminSupReserve', { token: ta, data: Object.assign({}, base, { kind: '', nameEn: 'A B', email: 'a@x.com' }) }).error, /نوع/);
+  assert.match(env.api('adminSupReserve', { token: ta, data: Object.assign({}, base, { title: 'عنوان عربي', nameEn: 'A B', email: 'a@x.com' }) }).error, /بالإنجليزية/);
+  assert.match(env.api('adminSupReserve', { token: ta, data: Object.assign({}, base, { end: '2026-08-01', nameEn: 'A B', email: 'a@x.com' }) }).error, /قبل/);
+  assert.match(env.api('adminSupReserve', { token: ta, data: Object.assign({}, base, { ceus: 'نصف', nameEn: 'A B', email: 'a@x.com' }) }).error, /الساعات/);
+  env.mails.length = 0;
+  const r = env.api('adminSupReserve', { token: ta, data: Object.assign({ nameEn: 'YASMEEN ALSUQAIR', email: 'Yas@x.com' }, base) });
+  assert.strictEqual(r.ok, true, r.error);
+  assert.strictEqual(r.data.template, 'sup-session'); assert.strictEqual(r.data.nameEn, 'Yasmeen Alsuqair');
+  assert.strictEqual(r.data.held, 'Held on 12 August 2026 | 0.5 Learning CEUs');
+  // قبل الإرسال: لا يراها المتدرب، والتحقق «غير موجودة»
+  assert.strictEqual(env.api('getMyData', { token: t }).data.requests.length, 0);
+  assert.strictEqual(env.api('verify', { certNo: r.data.certNo }).data.status, 'notfound');
+  assert.match(env.api('adminSupSend', { token: ta, data: { id: r.data.id, certNo: 'SLK-2026-999999', pdf: PDF } }).error, /غير مطابق/);
+  const sd = env.api('adminSupSend', { token: ta, data: { id: r.data.id, certNo: r.data.certNo, pdf: PDF } });
+  assert.strictEqual(sd.ok, true, sd.error);
+  assert.strictEqual(env.mails.length, 1, 'only the certificate email — no "received your request"');
+  const m = env.mails[0];
+  assert.strictEqual(m.to, 'yas@x.com'); assert.match(m.subject, /🎓.*Ethical Use/); assert.match(m.htmlBody, /نشكرك على حضورك/);
+  assert.match(m.htmlBody, /12 August 2026/); assert.doesNotMatch(m.htmlBody, /ملاحظة حول التاريخ/); assert.ok(m.attachments);
+  const v = env.api('verify', { certNo: r.data.certNo }).data;
+  assert.strictEqual(v.status, 'valid'); assert.strictEqual(v.name, 'Yasmeen Alsuqair'); assert.strictEqual(v.course, 'Ethical Use of Artificial Intelligence in ABA');
+  const mine = env.api('getMyData', { token: t }).data.requests;
+  assert.strictEqual(mine.length, 1); assert.strictEqual(mine[0].sup, true); assert.strictEqual(mine[0].certNo, r.data.certNo);
+  assert.match(env.api('requestNameChange', { token: t, id: r.data.id, data: { nameEn: 'Yasmin Alsuqair', reason: 'x' } }).error, /care@/);
+  assert.match(env.api('adminSupSend', { token: ta, data: { id: r.data.id, certNo: r.data.certNo, pdf: PDF } }).error, /ليست قيد الإصدار/);
+  assert.match(env.api('adminApprove', { token: ta, data: { id: r.data.id, certNo: r.data.certNo, pdf: PDF, start: '2026-08-12', end: '2026-08-12', resend: true } }).error, /تبويب/);
+  // تقديم دورة لعدة أيام + أرقام متتالية
+  const r2 = env.api('adminSupReserve', { token: ta, data: { kind: 'course', title: 'Techniques of ACT', start: '2026-06-29', end: '2026-07-01', ceus: '09', nameEn: 'Dr. Reem Abdulrazzaq', email: 'reem@x.com' } }).data;
+  assert.strictEqual(r2.held, 'Held From 29 June 2026 to 01 July 2026 | 09 Learning CEUs'); assert.strictEqual(r2.template, 'sup-course');
+  assert.notStrictEqual(r2.certNo, r.data.certNo);
+  env.api('adminSupSend', { token: ta, data: { id: r2.id, certNo: r2.certNo, pdf: PDF } });
+  assert.match(env.mails.pop().htmlBody, /نشكرك على تقديمك/);
+  assert.ok(env.sheet('السجل').data.some(x => x[2] === 'إصدار شهادة إشراف'));
+});
+
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));

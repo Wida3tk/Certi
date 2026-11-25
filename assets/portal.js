@@ -105,7 +105,7 @@ function renderMine(list) {
       (r.clearance === CLR.SIGN ? '<button data-sign="' + esc(r.id) + '" class="sign">مراجعة وتوقيع المخالصة</button>' : '') +
       (r.status === ST.ISSUED ? '<button data-c="' + esc(r.certNo) + '" class="dl">تحميل الشهادة</button>' : '') +
       (r.clearanceFile ? '<button data-clr="' + esc(r.id) + '" class="ghost dlc">المخالصة الموقّعة</button>' : '') +
-      (r.status === ST.ISSUED && r.nameChange !== NC.PAY ? '<button data-nc="' + esc(r.id) + '" class="ghost ncb">طلب تعديل الاسم</button>' : '') + '</td></tr>').join('') + '</table></div>';
+      (r.status === ST.ISSUED && r.nameChange !== NC.PAY && !r.sup ? '<button data-nc="' + esc(r.id) + '" class="ghost ncb">طلب تعديل الاسم</button>' : '') + '</td></tr>').join('') + '</table></div>';
   MINE = list;
   document.querySelectorAll('.dl').forEach(b => b.onclick = async () => {
     busy(b, true);

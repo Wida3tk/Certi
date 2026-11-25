@@ -45,11 +45,23 @@ function drawCertificate(canvas, bg, layout, data, qrFactory) {
     let size = f.size || 60;
     const font = s => (f.weight || '400') + ' ' + s + 'px "' + (f.font || 'Cairo') + '", Tahoma, sans-serif';
     ctx.font = font(size);
-    if (f.maxWidth) while (ctx.measureText(text).width > f.maxWidth && size > 12) { size -= 1; ctx.font = font(size); }
     ctx.fillStyle = f.color || '#1F3A5F';
     ctx.textAlign = f.align || 'center';
-    ctx.textBaseline = f.baseline || 'middle';
     ctx.direction = f.dir || (isAr ? 'rtl' : 'ltr');
+    if (f.wrap) { // نص يلتف على أسطر (حتى maxLines) ويصغر إن لم يتسع، والكتلة متمركزة عمودياً حول y
+      const lines = s => { ctx.font = font(s); const out = []; let cur = '';
+        String(text).split(/\s+/).forEach(w => { const t = cur ? cur + ' ' + w : w;
+          if (cur && ctx.measureText(t).width > f.wrap) { out.push(cur); cur = w; } else cur = t; });
+        if (cur) out.push(cur); return out; };
+      let ls = lines(size);
+      while ((ls.length > (f.maxLines || 2) || ls.some(l => ctx.measureText(l).width > f.wrap)) && size > 12) ls = lines(--size);
+      const lh = size * (f.lineHeight || 1.15);
+      ctx.textBaseline = 'middle';
+      ls.forEach((l, i) => ctx.fillText(l, f.x, f.y + (i - (ls.length - 1) / 2) * lh));
+      return;
+    }
+    if (f.maxWidth) while (ctx.measureText(text).width > f.maxWidth && size > 12) { size -= 1; ctx.font = font(size); }
+    ctx.textBaseline = f.baseline || 'middle';
     ctx.fillText(text, f.x, f.y);
   });
   return canvas;
