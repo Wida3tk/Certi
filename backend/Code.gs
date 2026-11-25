@@ -52,7 +52,8 @@ const CONFIG = {
     { section: 'صوتك يهمنا', q: 'ما مدى احتمالية أن توصي بهذا البرنامج لشخص مهتم بنفس المجال؟', max: 10 },
   ],
   SURVEY_COMMENT: 'هل لديك أي ملاحظات أو مقترحات إضافية؟',
-  ISSUE_DAYS: 'يومين إلى ثلاثة أيام عمل',  // مدة الإصدار كما تظهر للمتدرب وفي الإيميلات
+  ISSUE_DAYS: 'يومين إلى ثلاثة أيام عمل',  // مدة الإصدار كما تظهر للمتدرب وفي الإيميلات (الدورات القصيرة)
+  ISSUE_DAYS_PROGRAMS: 'ثلاثة إلى خمسة أيام عمل', // شهادات تحليل السلوك وإدارة السلوك التنظيمي (بعد المخالصة المالية)
   SESSION_HOURS: 6,          // جلسة المتدرب (رمز البريد)
   REMEMBER_DAYS: 30,         // «تذكّرني على هذا الجهاز»: جلسة موقّعة تبقى على جهاز المتدرب
   ADMIN_SESSION_HOURS: 6,    // جلسة الإدارة (كلمة المرور) — تتجدد مع كل استخدام
@@ -423,7 +424,7 @@ function getMyData(token) {
     courses: activeCourses_(),
     survey: CONFIG.SURVEY,
     surveyComment: CONFIG.SURVEY_COMMENT,
-    issueDays: CONFIG.ISSUE_DAYS,
+    issueDays: CONFIG.ISSUE_DAYS, issueDaysPrograms: CONFIG.ISSUE_DAYS_PROGRAMS,
     requests: mine.map(r => ({
       id: r['رقم الطلب'], course: r['اسم الدورة'], date: String(r['تاريخ الطلب']).slice(0, 10),
       status: r['الحالة'], certNo: r['الحالة'] === ST.ISSUED ? r['رقم الشهادة'] : '',
@@ -514,8 +515,9 @@ function submitRequest(token, d) {
         htmlBody: shell_('استلمنا طلبك',
           '<p>مرحباً ' + esc_(nameAr) + '،</p>' +
           '<p>وصلنا طلب ' + (fresh.length > 1 ? 'الشهادات التالية' : 'الشهادة التالية') + ':</p><ul style="padding-right:20px">' + list + '</ul>' +
-          '<p style="background:#EEF4FB;padding:12px 16px;border-radius:8px">تُصدر الشهادة خلال ' + CONFIG.ISSUE_DAYS +
-          '، علماً بأن يومي الجمعة والسبت عطلة رسمية. ' + (fresh.length > 1 ? 'تُراجَع كل شهادة على حدة، وتصلك كل واحدة فور اعتمادها' : 'ستصلك على بريدك هذا') +
+          '<p style="background:#EEF4FB;padding:12px 16px;border-radius:8px">' + (fresh.some(c => (c.category || 'short') !== 'short')
+            ? 'تُصدر الشهادة بعد إصدار المخالصة المالية، خلال ' + CONFIG.ISSUE_DAYS_PROGRAMS + '، علماً بأن يومي الجمعة والسبت عطلة رسمية. عند جاهزية المخالصة يصلك بريد لمراجعتها وتوقيعها إلكترونياً. '
+            : 'تُصدر الشهادة خلال ' + CONFIG.ISSUE_DAYS + '، علماً بأن يومي الجمعة والسبت عطلة رسمية. ') + (fresh.length > 1 ? 'تُراجَع كل شهادة على حدة، وتصلك كل واحدة فور اعتمادها' : 'ستصلك على بريدك هذا') +
           '، وتجدها أيضاً في «شهاداتي».</p>' +
           '<p>الاسم كما سيظهر على الشهادة: <b dir="ltr">' + esc_(nameEn) + '</b></p>' +
           '<p style="color:#666;font-size:13px">إذا كان في الاسم خطأ، يُرجى الرد على هذه الرسالة قبل إصدار الشهادة؛ فتعديل الاسم بعد الإصدار يترتب عليه رسوم إضافية.</p>'),

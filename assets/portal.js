@@ -47,6 +47,7 @@ async function loadPortal(preloaded) {
     const d = preloaded || await api('getMyData', { token: SESSION.token });
     SURVEY = d.survey; ANS = SURVEY.map(() => 0); COURSES = d.courses;
     document.querySelectorAll('.issueDays').forEach(e => e.textContent = d.issueDays);
+    if (d.issueDaysPrograms) document.querySelectorAll('.issueDaysPrograms').forEach(e => e.textContent = d.issueDaysPrograms);
     $('commentLabel').textContent = d.surveyComment;
     renderCourses();
     let sec = '';
@@ -281,7 +282,8 @@ $('bSubmit').onclick = async () => {
       ids = got.map(r => r.id); requests = d.requests;
     }
     msg($('pMsg'), (ids.length > 1 ? 'وصل طلبك لـ ' + ids.length + ' شهادات' : 'وصل طلبك (رقم ' + ids[0] + ')') + '. تُصدر الشهادة خلال ' +
-      document.querySelector('.issueDays').textContent + ' وتصلك على بريدك، وتجدها أيضاً في «شهاداتي».' +
+      (CAT && CAT !== 'short' ? document.querySelector('.issueDaysPrograms').textContent + ' بعد إصدار المخالصة المالية. يصلك بريد عند جاهزيتها لتوقيعها، ثم تصلك شهادتك وتجدها أيضاً في «شهاداتي».'
+        : document.querySelector('.issueDays').textContent + ' وتصلك على بريدك، وتجدها أيضاً في «شهاداتي».') +
       (skipped.length ? '\nلم يُضف: ' + skipped.map(x => x.course + ' (' + x.reason + ')').join('، ') : ''), 'ok');
     ['fNameEn', 'fNameAr', 'fPlatformEmail', 'fCity', 'fPhone', 'fComment', 'courseSearch'].forEach(i => $(i).value = '');
     PICKED.clear(); CAT = ''; renderCourses();

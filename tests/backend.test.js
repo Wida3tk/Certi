@@ -656,7 +656,10 @@ test('أنواع الشهادات: شهادة واحدة لتصنيفي تحلي
   assert.strictEqual(cs.find(c => c.id === 'persuasion-influence').category, 'short');
   assert.match(env.api('submitRequest', { token: t, data: form({ courseIds: ['obm-p', 'obm-e'] }) }).error, /وحدها/);
   assert.match(env.api('submitRequest', { token: t, data: form({ courseIds: ['persuasion-influence', 'qba'] }) }).error, /وحدها/);
+  env.mails.length = 0;
   const id = env.api('submitRequest', { token: t, data: form({ courseIds: ['qba'] }) }).data.id;
+  assert.ok(env.mails.some(m => m.to === 'cat@x.com' && /ثلاثة إلى خمسة أيام عمل/.test(m.htmlBody) && /المخالصة/.test(m.htmlBody)), 'program timing in confirmation');
+  assert.strictEqual(env.api('getMyData', { token: t }).data.issueDaysPrograms, 'ثلاثة إلى خمسة أيام عمل');
   const g = env.api('adminGet', { token: ta, id }).data;
   assert.strictEqual(g.clearance, 'بانتظار المالية'); assert.deepStrictEqual(Array.from(g.templates), []);
   const num = env.api('adminReserveNumber', { token: ta, id }).data;
