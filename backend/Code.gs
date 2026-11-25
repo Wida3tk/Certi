@@ -646,18 +646,52 @@ function adminSupReserve(token, d) {
     return { id: id, certNo: certNo, verifyUrl: verifyUrl_(certNo), template: 'sup-' + c.kind, nameEn: nameEn, title: c.title, held: c.held };
   } finally { lock.releaseLock(); }
 }
-/** حفظ شهادة الإشراف المولّدة وإرسالها للمستلم */
+/** إصدار مباشر لشهادة دورة/برنامج من الكتالوج (استثناء مؤقت لشهادات تحليل السلوك التطبيقي): بلا طلب ولا مخالصة ولا «استلمنا طلبك» */
+function adminDirectReserve(token, d) {
+  const by = admin_(token);
+  d = d || {};
+  const c = courseById_(d.courseId);
+  if (!c || c.category !== 'aba') throw new Error('الإصدار المباشر متاح لشهادات تحليل السلوك التطبيقي فقط.');
+  if (!c.templates.length) throw new Error('لا يوجد قالب لشهادة «' + c.nameAr + '» بعد.');
+  const tpl = String(d.template || c.templates[0].dir);
+  if (!c.templates.some(t => t.dir === tpl)) throw new Error('القالب المختار لا يخص هذه الشهادة.');
+  if (!isIsoDate_(d.start) || !isIsoDate_(d.end)) throw new Error('حددي تاريخ البدء وتاريخ الإتمام.');
+  if (d.start > d.end) throw new Error('تاريخ البدء بعد تاريخ الإتمام.');
+  const nameEn = titleName_(d.nameEn), email = cleanEmail_(d.email);
+  if (!NAME_EN_RE.test(nameEn)) throw new Error('اسم غير صالح: ' + (d.nameEn || '') + ' (يُكتب بالإنجليزية).');
+  if (!isEmail_(email)) throw new Error('بريد غير صالح: ' + (d.email || ''));
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const certNo = nextCertNo_(rows_(TABS.REQ));
+    const id = 'DIR-' + Utilities.formatDate(new Date(), tz_(), 'yyMMdd') + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 5).toUpperCase();
+    appendObj_(TABS.REQ, REQ_HEADERS.concat(['المصدر']), {
+      'رقم الطلب': id, 'تاريخ الطلب': now_(), 'الاسم بالإنجليزي': safe_(nameEn, 80), 'الاسم بالعربي': safe_(clean_(d.nameAr), 80), 'البريد': email,
+      'معرّف الدورة': c.id, 'اسم الدورة': c.nameAr, 'اسم الدورة (EN)': c.name, 'نوع البرنامج': TYPE_LABEL[c.type],
+      'الحالة': SUP.DRAFT, 'تاريخ البدء': d.start, 'تاريخ الإتمام': d.end, 'القالب': tpl, 'رقم الشهادة': certNo, 'اعتمدها': by,
+      'المخالصة': CLR.NONE, 'المصدر': 'إصدار مباشر (استثناء)',
+    });
+    SpreadsheetApp.flush();
+    return { id: id, certNo: certNo, verifyUrl: verifyUrl_(certNo), template: tpl, nameEn: nameEn, course: c.nameAr, start: d.start, end: d.end };
+  } finally { lock.releaseLock(); }
+}
+/** حفظ شهادة الإشراف (أو الإصدار المباشر) المولّدة وإرسالها للمستلم */
 function adminSupSend(token, d) {
   const by = admin_(token);
   d = d || {};
   const r = findReq_(d.id);
-  if (r['معرّف الدورة'] !== SUP.ID || r['الحالة'] !== SUP.DRAFT) throw new Error('هذه الشهادة ليست قيد الإصدار.');
+  if (r['الحالة'] !== SUP.DRAFT) throw new Error('هذه الشهادة ليست قيد الإصدار.');
+  const isSup = r['معرّف الدورة'] === SUP.ID;
   if (r['رقم الشهادة'] !== d.certNo) throw new Error('رقم الشهادة غير مطابق.');
   const fileName = (d.certNo + ' - ' + r['الاسم بالإنجليزي'] + ' - ' + r['اسم الدورة (EN)']).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').slice(0, 150).trim() + '.pdf';
   const blob = Utilities.newBlob(Utilities.base64Decode(String(d.pdf || '')), 'application/pdf', fileName);
   if (blob.getBytes().slice(0, 4).map(b => String.fromCharCode(b)).join('') !== '%PDF') throw new Error('ملف الشهادة غير صالح.');
   const file = DriveApp.getFolderById(prop_('CERTS_FOLDER')).createFile(blob);
   setCells_(TABS.REQ, r._row, { 'الحالة': ST.ISSUED, 'ملف الشهادة': file.getId(), 'تاريخ الإصدار': now_(), 'اعتمدها': by });
+  if (!isSup) {
+    sendCertEmail_(cleanEmail_(r['البريد']), r, d.certNo, blob, false);
+    log_(by, 'إصدار مباشر', r['رقم الطلب'], d.certNo + ' — ' + r['اسم الدورة'] + ' — ' + r['الاسم بالإنجليزي']);
+    return 'صدرت ' + d.certNo + ' وأُرسلت إلى ' + r['البريد'];
+  }
   const c = jsonOr_(r['بيانات الإشراف'], {});
   sendCertEmail_(cleanEmail_(r['البريد']), r, d.certNo, blob, false, '', {
     lead: c.kind === 'course' ? 'نشكرك على تقديمك، وهذه شهادتك عن:' : 'نشكرك على حضورك، وهذه شهادتك عن:',
@@ -1416,6 +1450,8 @@ const ACTIONS = {
   adminClearancePreview: b => adminClearancePreview(b.token, b.id),
   adminSupReserve: b => adminSupReserve(b.token, b.data),
   adminSupSend: b => adminSupSend(b.token, b.data),
+  adminDirectReserve: b => adminDirectReserve(b.token, b.data),
+  adminCourses: b => (admin_(b.token), courses_()),
   adminNameChangeReject: b => adminNameChangeReject(b.token, b.id, b.reason),
   adminStats: b => adminStats(b.token),
   requestNameChange: b => requestNameChange(b.token, b.id, b.data),

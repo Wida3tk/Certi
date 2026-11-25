@@ -711,4 +711,30 @@ test('شهادات الإشراف: إصدار مباشر بلا طلب ← إي�
   assert.ok(env.sheet('السجل').data.some(x => x[2] === 'إصدار شهادة إشراف'));
 });
 
+test('إصدار مباشر لشهادات تحليل السلوك (استثناء): بلا طلب ولا مخالصة ولا «استلمنا»، وشهادة بلا قالب ممنوعة', () => {
+  const env = createEnv({ coursesJson: JSON.stringify([
+    { id: 'persuasion-influence', nameAr: 'فن الإقناع والتأثير', name: 'Persuasion', type: 'short', active: true },
+    { id: 'qba', nameAr: 'شهادة محلل السلوك (QBA)', name: 'Qualified Behavior Analyst (QBA)', type: 'long', category: 'aba', clearance: true, active: true, templates: [{ dir: 'qba', label: '' }] },
+    { id: 'qasp-s', nameAr: 'شهادة مساعد محلل السلوك (QASP-S)', name: 'QASP-S', type: 'long', category: 'aba', clearance: true, active: true, templates: [] }]) });
+  env.ctx.setup();
+  const ta = adminLogin(env, ADMIN), t = login(env, 'q@x.com');
+  const d = { courseId: 'qba', start: '2025-01-10', end: '2026-11-20', nameEn: 'OMAR ALI', email: 'Q@x.com' };
+  assert.strictEqual(env.api('adminDirectReserve', { token: t, data: d }).ok, false, 'trainee blocked');
+  assert.match(env.api('adminDirectReserve', { token: ta, data: Object.assign({}, d, { courseId: 'persuasion-influence' }) }).error, /تحليل السلوك/);
+  assert.match(env.api('adminDirectReserve', { token: ta, data: Object.assign({}, d, { courseId: 'qasp-s' }) }).error, /لا يوجد قالب/);
+  assert.match(env.api('adminDirectReserve', { token: ta, data: Object.assign({}, d, { end: '2024-01-01' }) }).error, /بعد/);
+  env.mails.length = 0;
+  const r = env.api('adminDirectReserve', { token: ta, data: d }).data;
+  assert.strictEqual(r.template, 'qba'); assert.strictEqual(r.nameEn, 'Omar Ali');
+  assert.strictEqual(env.api('getMyData', { token: t }).data.requests.length, 0, 'draft hidden');
+  assert.strictEqual(env.api('adminSupSend', { token: ta, data: { id: r.id, certNo: r.certNo, pdf: PDF } }).ok, true);
+  assert.strictEqual(env.mails.length, 1, 'only the certificate email: no finance, no "received"');
+  assert.strictEqual(env.mails[0].to, 'q@x.com'); assert.match(env.mails[0].subject, /🎓/); assert.match(env.mails[0].htmlBody, /ملاحظة حول التاريخ/);
+  const g = env.api('adminGet', { token: ta, id: r.id }).data;
+  assert.strictEqual(g.status, 'صادرة'); assert.strictEqual(g.clearance, 'لا تحتاج مخالصة'); assert.strictEqual(g.start, '2025-01-10');
+  assert.strictEqual(env.api('verify', { certNo: r.certNo }).data.status, 'valid');
+  const mine = env.api('getMyData', { token: t }).data.requests;
+  assert.strictEqual(mine.length, 1); assert.strictEqual(mine[0].sup, false);
+});
+
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));

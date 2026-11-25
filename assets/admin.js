@@ -464,8 +464,38 @@ function renderDash(d) {
 
 /* ---------- شهادات الإشراف: إصدار مباشر بلا طلب ---------- */
 const SUP_M = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+let ABA = null;
+async function supKindChanged() {
+  const aba = (document.querySelector('input[name="supKind"]:checked') || {}).value === 'aba';
+  $('supAbaBox').classList.toggle('hide', !aba); $('supTitleBox').classList.toggle('hide', aba); $('supCeusBox').classList.toggle('hide', aba);
+  $('supStartL').textContent = aba ? 'تاريخ البدء' : 'التاريخ';
+  $('supEndL').innerHTML = aba ? 'تاريخ الإتمام' : 'إلى تاريخ <span class="hint">(اختياري، لأكثر من يوم)</span>';
+  $('supPrev').innerHTML = '';
+  if (aba && !ABA) {
+    try { ABA = (await api('adminCourses', { token: SESSION.token })).filter(c => c.category === 'aba'); } catch (e) { msg($('supMsg'), e.message, 'err'); return; }
+    $('supProg').innerHTML = ABA.map(c => (c.templates.length ? c.templates : [{ dir: '', label: '' }]).map(t =>
+      '<option value="' + esc(c.id) + '|' + esc(t.dir) + '">' + esc(c.nameAr) + (t.label ? ' — ' + esc(t.label) : '') + (t.dir ? '' : ' (لا يوجد قالب بعد)') + '</option>').join('')).join('');
+    abaNote();
+  }
+}
+function abaNote() {
+  const tpl = ($('supProg').value || '').split('|')[1];
+  $('supProgNote').classList.toggle('hide', !!tpl);
+  $('supProgNote').textContent = 'لا يوجد قالب لهذه الشهادة بعد، فلا يمكن إصدارها الآن. تتفعّل تلقائياً عند إضافة القالب.';
+  $('bSupGo').disabled = !tpl; $('bSupPrev').disabled = !tpl;
+}
+document.querySelectorAll('input[name="supKind"]').forEach(r => r.onchange = () => { $('bSupGo').disabled = false; $('bSupPrev').disabled = false; supKindChanged(); });
+$('supProg').onchange = abaNote;
 function supForm() {
   const kind = (document.querySelector('input[name="supKind"]:checked') || {}).value;
+  if (kind === 'aba') {
+    const [courseId, template] = ($('supProg').value || '').split('|'), start = $('supStart').value, end = $('supEnd').value;
+    if (!template) throw new Error('لا يوجد قالب لهذه الشهادة بعد.');
+    if (!start || !end) throw new Error('حددي تاريخ البدء وتاريخ الإتمام.');
+    if (start > end) throw new Error('تاريخ البدء بعد تاريخ الإتمام.');
+    const c = ABA.find(x => x.id === courseId);
+    return { kind, courseId, template, start, end, title: c.nameAr };
+  }
   const title = $('supTitle').value.replace(/\s+/g, ' ').trim(), start = $('supStart').value, end = $('supEnd').value, ceus = $('supCeus').value.trim();
   if (!title) throw new Error('اكتبي عنوان الشهادة.');
   if (/[؀-ۿ]/.test(title)) throw new Error('عنوان الشهادة يُكتب بالإنجليزية كما يُطبع.');
@@ -495,7 +525,8 @@ $('bSupPrev').onclick = async () => {
   const b = $('bSupPrev'); busy(b, true); clearMsg($('supMsg'));
   try {
     const c = supForm(), p = supPeople();
-    const out = await generateCertificate('sup-' + c.kind, { nameEn: (p.ok[0] || {}).nameEn || 'Recipient Name', title: c.title, held: c.held,
+    const out = await generateCertificate(c.kind === 'aba' ? c.template : 'sup-' + c.kind, { nameEn: (p.ok[0] || {}).nameEn || 'Recipient Name', title: c.title, held: c.held,
+      course: c.title, start: c.start, end: c.end,
       certNo: 'SLK-0000-000000', verifyUrl: location.origin + '/?v=SLK-0000-000000' });
     $('supPrev').innerHTML = '<p class="hint">معاينة (الرقم ورمز QR الحقيقيان يُضافان عند الإصدار):</p>'; $('supPrev').appendChild(out.canvas);
   } catch (e) { msg($('supMsg'), e.message, 'err'); }
@@ -515,8 +546,9 @@ $('bSupGo').onclick = async () => {
   for (let i = 0; i < p.ok.length; i++) {
     const cell = $('supR' + i); cell.textContent = 'جارٍ الإصدار...';
     try {
-      const r = await api('adminSupReserve', { token: SESSION.token, data: Object.assign({}, c, p.ok[i]) });
-      const out = await generateCertificate(r.template, { nameEn: r.nameEn, title: r.title, held: r.held, certNo: r.certNo, verifyUrl: r.verifyUrl });
+      const r = await api(c.kind === 'aba' ? 'adminDirectReserve' : 'adminSupReserve', { token: SESSION.token, data: Object.assign({}, c, p.ok[i]) });
+      const out = await generateCertificate(r.template, { nameEn: r.nameEn, title: r.title, held: r.held, course: r.course, start: r.start, end: r.end,
+        certNo: r.certNo, verifyUrl: r.verifyUrl });
       await api('adminSupSend', { token: SESSION.token, data: { id: r.id, certNo: r.certNo, pdf: out.pdfBase64 } });
       cell.innerHTML = '<span class="pill p-ok">صدرت وأُرسلت</span> <span dir="ltr" class="hint">' + esc(r.certNo) + '</span>'; done++;
     } catch (e) { cell.innerHTML = '<span class="pill p-no">تعذّر</span> ' + esc(e.message); }

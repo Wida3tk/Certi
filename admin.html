@@ -56,23 +56,30 @@
 <section id="vAdmin" class="hide">
   <div class="tabs" id="aTabs">
     <button data-f="بانتظار المراجعة" class="on">بانتظار المراجعة<span class="count" id="cPending"></span></button>
-    <button data-f="__clr">المخالصات<span class="count" id="cClr"></span></button><button data-f="__nc">تعديل الاسم<span class="count" id="cNc"></span></button><button data-f="صادرة">صادرة</button><button data-f="مرفوضة">مرفوضة</button><button data-f="ملغاة">ملغاة</button><button data-f="">الكل</button><button data-f="__sup">🎓 شهادات الإشراف</button><button data-f="__dash">📊 المتابعة</button>
+    <button data-f="__clr">المخالصات<span class="count" id="cClr"></span></button><button data-f="__nc">تعديل الاسم<span class="count" id="cNc"></span></button><button data-f="صادرة">صادرة</button><button data-f="مرفوضة">مرفوضة</button><button data-f="ملغاة">ملغاة</button><button data-f="">الكل</button><button data-f="__sup">🎓 إصدار مباشر</button><button data-f="__dash">📊 المتابعة</button>
   </div>
   <div id="aDash" class="hide"></div>
   <div id="aSup" class="card hide">
-    <h2 style="margin-top:0">إصدار شهادات الإشراف</h2>
-    <p class="hint" style="margin-top:0">تُصدر مباشرة بلا طلب من المتدرب، ولا تظهر للطلاب كخيار. يصل كل مستلم إيميل الشهادة فقط، وتظهر له في «شهاداتي» ويتحقق منها برمز QR. التوقيع والختم ثابتان في القالب.</p>
+    <h2 style="margin-top:0">إصدار مباشر</h2>
+    <p class="hint" style="margin-top:0">تُصدر مباشرة بلا طلب من المتدرب ولا مخالصة، ولا تظهر للطلاب كخيار. يصل كل مستلم إيميل الشهادة فقط، وتظهر له في «شهاداتي» ويتحقق منها برمز QR.</p>
     <label>نوع الشهادة</label>
     <div class="prog-list" id="supKind" role="radiogroup">
       <label class="prog"><input type="radio" name="supKind" value="session" checked><span>حضور جلسة نقاش<br><small class="hint" dir="ltr">Has attended a Discussion Session entitled</small></span></label>
       <label class="prog"><input type="radio" name="supKind" value="course"><span>تقديم دورة<br><small class="hint" dir="ltr">In recognition of delivering an Online Course titled</small></span></label>
+      <label class="prog"><input type="radio" name="supKind" value="aba"><span>شهادة تحليل السلوك التطبيقي<br><small class="hint">استثناء مؤقت: بلا مخالصة ولا «استلمنا طلبك»</small></span></label>
     </div>
-    <label for="supTitle">عنوان الشهادة <span class="hint">(بالإنجليزية كما يُطبع)</span></label>
-    <input id="supTitle" dir="ltr" maxlength="140" placeholder="Ethical Use of Artificial Intelligence in ABA">
+    <div id="supAbaBox" class="hide">
+      <label for="supProg">الشهادة</label><select id="supProg"></select>
+      <div id="supProgNote" class="warnbox hide"></div>
+    </div>
+    <div id="supTitleBox">
+      <label for="supTitle">عنوان الشهادة <span class="hint">(بالإنجليزية كما يُطبع)</span></label>
+      <input id="supTitle" dir="ltr" maxlength="140" placeholder="Ethical Use of Artificial Intelligence in ABA">
+    </div>
     <div class="row">
-      <div><label for="supStart">التاريخ</label><input id="supStart" type="date"></div>
-      <div><label for="supEnd">إلى تاريخ <span class="hint">(اختياري، لأكثر من يوم)</span></label><input id="supEnd" type="date"></div>
-      <div><label for="supCeus">الساعات (Learning CEUs)</label><input id="supCeus" dir="ltr" value="0.5" maxlength="6"></div>
+      <div><label for="supStart" id="supStartL">التاريخ</label><input id="supStart" type="date"></div>
+      <div><label for="supEnd" id="supEndL">إلى تاريخ <span class="hint">(اختياري، لأكثر من يوم)</span></label><input id="supEnd" type="date"></div>
+      <div id="supCeusBox"><label for="supCeus">الساعات (Learning CEUs)</label><input id="supCeus" dir="ltr" value="0.5" maxlength="6"></div>
     </div>
     <label for="supList">المستلمون <span class="hint">(سطر لكل شخص: الاسم بالإنجليزية، ثم البريد. يمكن اللصق من Excel)</span></label>
     <textarea id="supList" dir="ltr" rows="6" placeholder="Yasmeen Alsuqair, yasmeen@example.com&#10;Muna Aboalhoul, muna@example.com"></textarea>
