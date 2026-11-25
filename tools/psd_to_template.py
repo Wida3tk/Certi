@@ -53,7 +53,7 @@ def style(l):
                 x=round(l.transform[4], 1), y=round(l.transform[5], 1), psFont=font)
 
 start = next((l for l in types if l.text.strip().lower().startswith('start date')), None)
-end = next((l for l in types if l.text.strip().lower().startswith('end date')), None)
+end = next((l for l in types if re.match(r'(end|completion) date', l.text.strip().lower())), None)
 if a.name_layer:
     name = next((l for l in types if l.name == a.name_layer), None)
 else:
@@ -89,8 +89,9 @@ nb = name.bbox
 layout = {'fields': [
     field('nameEn', name, dict({'maxWidth': a.name_maxwidth or round((nb[2] - nb[0]) * 1.5)},
                                **({'size': a.name_size} if a.name_size else {}))),
-    field('start', start, {'prefix': 'Start date: ', 'format': a.date_format}),
-    field('end', end, {'prefix': 'End date: ', 'format': a.date_format}),
+    # البادئة كما كُتبت في القالب نفسه (Start date / Start Date / End date / Completion Date)
+    field('start', start, {'prefix': start.text.strip().split(':')[0] + ': ', 'format': a.date_format}),
+    field('end', end, {'prefix': end.text.strip().split(':')[0] + ': ', 'format': a.date_format}),
     {'key': 'qr', 'x': qx, 'y': qy, 'size': qs, 'color': '#1F2440', 'bg': '#FFFFFF'},
     {'key': 'certNo', 'x': cx, 'y': cy, 'size': cs, 'font': style(start)['font'], 'weight': '700',
      'color': '#1F2440', 'align': 'center'},
