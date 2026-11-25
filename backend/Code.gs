@@ -1131,6 +1131,14 @@ function clearanceSign(token, id, d) {
     return { ok: true, requests: getMyData(token).requests };
   } finally { lock.releaseLock(); }
 }
+/** معاينة المخالصة للفريق قبل توقيع المتدرب (نفس التصميم، بلا توقيع، لا تُحفظ) */
+function adminClearancePreview(token, id) {
+  admin_(token);
+  const r = findReq_(id);
+  if (r['المخالصة'] !== CLR.SIGN) throw new Error('المعاينة متاحة بعد إصدار المخالصة وقبل التوقيع.');
+  const pdf = buildClearancePdf_(clearanceData_(r), null, jsonOr_(r['سجل التوقيع'], []), now_());
+  return { name: 'معاينة - ' + pdf.getName(), data: Utilities.base64Encode(pdf.getBytes()) };
+}
 function downloadMyClearance(token, id) {
   const r = myReq_(token, id);
   if (!r['ملف المخالصة']) throw new Error('لا توجد مخالصة موقّعة.');
@@ -1160,77 +1168,91 @@ function usLong_(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? Number(m[3]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1] + ' ' + m[1] : String(iso || '');
 }
-/** يبني مستند المخالصة في Google Docs (يدعم العربية واتجاهها) ثم يحوّله PDF. المستند المؤقت يُحذف بعد التحويل */
+/** HTML المخالصة: يُحوَّل إلى Google Docs (الاتجاه من اليمين لليسار والخط IBM Plex Sans Arabic يُحفظان في التحويل) ثم PDF */
+const CLR_FONT = "font-family:'IBM Plex Sans Arabic';";
+/** تاريخ عربي لا ينقلب اتجاهه داخل النص العربي: 1 مارس 2026 */
+function arDate_(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}:\d{2}))?/);
+  if (!m) return esc_(iso || '');
+  const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+  return Number(m[3]) + ' ' + months[Number(m[2]) - 1] + ' ' + m[1] + (m[4] ? '، الساعة ' + m[4] : '');
+}
+function clearanceHtml_(d, img, log, signedAt) {
+  const C = '#031233', M = '#5B6478', L = '#C9D3EA', B = '#E8EEFB';
+  const p = (t, st) => '<p dir="rtl" style="' + CLR_FONT + 'text-align:right;color:' + C + ';font-size:10.5pt;line-height:1.45;margin:0 0 4pt 0;' + (st || '') + '">' + t + '</p>';
+  const ltr = v => '<span dir="ltr">' + esc_(v) + '</span>';
+  const cell = (v, head, w) => '<td dir="rtl" style="' + CLR_FONT + 'border:1px solid ' + L + ';padding:4pt 8pt;text-align:right;vertical-align:middle;color:' + C + ';font-size:10pt;' +
+    (head ? 'background:' + B + ';font-weight:bold;' : '') + (w ? 'width:' + w + ';' : '') + '">' + v + '</td>';
+  const table = (title, rows) => p(title, 'font-weight:bold;font-size:11.5pt;margin:9pt 0 4pt 0') +
+    '<table dir="rtl" style="border-collapse:collapse;width:100%">' + rows.map(r => '<tr>' + cell(r[0], true, '32%') + cell(r[1]) + '</tr>').join('') + '</table>';
+  const date = arDate_(String(signedAt).slice(0, 10));
+  const label = { created: 'إنشاء المستند', sent: 'إرسال للتوقيع', viewed: 'اطلاع المتدرب', signed: 'التوقيع' };
+  return '<html><head><meta charset="utf-8"></head><body dir="rtl">' +
+    '<table dir="rtl" style="border-collapse:collapse;width:100%"><tr>' +
+      '<td dir="rtl" style="width:50%;text-align:right;vertical-align:middle;border:0">' + (img.logo ? '<p dir="rtl" style="text-align:right;margin:0"><img src="' + img.logo + '" width="112" height="70"></p>' : '') + '</td>' +
+      '<td dir="rtl" style="' + CLR_FONT + 'width:50%;text-align:left;vertical-align:middle;border:0;color:' + M + ';font-size:9pt">شركة حلول سلوك التقنية<br>س.ت 1010636715</td></tr></table>' +
+    p('مخالصة مالية', 'text-align:center;font-size:19pt;font-weight:bold;margin:4pt 0 2pt 0') +
+    p('رقم المستند: ' + ltr(d.docId), 'text-align:center;font-size:9pt;color:' + M + ';margin:0 0 6pt 0') +
+    table('المعلومات الأولية', [['اسم العميل', esc_(d.name)], ['رقم الجوال', ltr(d.phone)], ['البريد الإلكتروني', ltr(d.email)]]) +
+    table('ملخص الالتزامات المالية', [['البرنامج / الخدمة', esc_(d.program)], ['عدد الساعات', esc_(d.hours)], ['الإجمالي', ltr(d.total)],
+      ['تاريخ البدء', arDate_(d.start)], ['تاريخ الإخلاء', arDate_(d.clearDate)]]) +
+    p('الإقرار', 'font-weight:bold;font-size:11.5pt;margin:10pt 0 4pt 0') +
+    CLEARANCE_TEXT.map((x, i) => p(esc_(x), 'text-align:justify;line-height:1.6;' + (i === 0 ? 'font-weight:bold;' : ''))).join('') +
+    p('وحُرّر هذا الإقرار بتاريخ ' + date + '.', 'margin:4pt 0 8pt 0') +
+    '<table dir="rtl" style="border-collapse:collapse;width:100%"><tr>' +
+      '<td dir="rtl" style="' + CLR_FONT + 'width:55%;text-align:right;vertical-align:top;border:0;color:' + C + ';font-size:11pt">' +
+        '<p dir="rtl" style="' + CLR_FONT + 'text-align:right;margin:0 0 2pt 0;font-size:10.5pt"><b>المُقِر:</b> ' + esc_(d.name) + '</p>' +
+        '<p dir="rtl" style="' + CLR_FONT + 'text-align:right;margin:0;font-size:10.5pt"><b>التوقيع:</b></p>' +
+        (img.signature ? '<p dir="rtl" style="text-align:right;margin:0"><img alt="signature" src="' + img.signature + '" width="160" height="64"></p>' : '') + '</td>' +
+      '<td dir="rtl" style="' + CLR_FONT + 'width:45%;text-align:center;vertical-align:top;border:0;color:' + C + ';font-size:11pt"><b>منصة سلوكيرا</b><br>' +
+        (img.stamp ? '<img src="' + img.stamp + '" width="110" height="110">' : '') + '</td></tr></table>' +
+    // سجل التوقيع الإلكتروني (صفحة مستقلة)
+    p('سجل التوقيع الإلكتروني', 'text-align:center;font-size:16pt;font-weight:bold;margin:0 0 4pt 0') +
+    p('مستند رقم ' + ltr(d.docId) + ' — ' + esc_(d.program), 'text-align:center;font-size:9.5pt;color:' + M + ';margin:0 0 10pt 0') +
+    '<table dir="rtl" style="border-collapse:collapse;width:100%"><tr>' + cell('الإجراء', true, '20%') + cell('الوقت', true, '32%') + cell('التفاصيل', true) + '</tr>' +
+      log.map(x => '<tr>' + cell(esc_(label[x.e] || x.e)) + cell(arDate_(x.at)) +
+        cell([x.by || x.to ? ltr(x.by || x.to) : '', x.ua ? 'الجهاز: ' + ltr(x.ua) : ''].filter(String).join('<br>')) + '</tr>').join('') + '</table>' +
+    p('التحقق من الهوية: دخول المتدرب ببريده الإلكتروني ' + ltr(d.email) + ' برمز مؤقت أُرسل إليه، ثم الإقرار بالاطلاع والموافقة ورسم التوقيع بيده على الشاشة.',
+      'font-size:9pt;color:' + M + ';margin:10pt 0 0 0') +
+    '</body></html>';
+}
+/** يحوّل HTML المخالصة إلى مستند Google Docs (عبر Drive API)، ويضيف تذييل سلوكيرا، ثم يصدّره PDF. المستند المؤقت يُحذف */
 function buildClearancePdf_(d, signature, log, signedAt) {
   const name = (d.docId + ' - Financial Clearance - ' + (d.nameEn || d.email)).replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 140);
-  const doc = DocumentApp.create(name);
+  const uri = b => b ? 'data:image/png;base64,' + Utilities.base64Encode(b.getBytes()) : '';
+  const html = clearanceHtml_(d, { logo: uri(clearanceAsset_('logo-blue.png')), stamp: uri(clearanceAsset_('stamp.png')), signature: uri(signature) }, log, signedAt);
+  const boundary = 'slk' + Utilities.getUuid().replace(/-/g, '');
+  const meta = JSON.stringify({ name: name, mimeType: 'application/vnd.google-apps.document', parents: [clearanceFolder_()] });
+  const payload = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta + '\r\n--' + boundary +
+    '\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n' + html + '\r\n--' + boundary + '--';
+  const res = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true', {
+    method: 'post', contentType: 'multipart/related; boundary=' + boundary, payload: Utilities.newBlob(payload).getBytes(),
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error('Drive convert ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 300));
+  const id = JSON.parse(res.getContentText()).id;
   try {
-    const body = doc.getBody();
-    body.setMarginTop(36).setMarginBottom(36).setMarginLeft(48).setMarginRight(48);
-    const RTL = p => { try { p.setLeftToRight(false); } catch (e) { } return p; };
-    const para = (text, opt) => {
-      const p = RTL(body.appendParagraph(text || ''));
-      p.setAlignment(opt && opt.center ? DocumentApp.HorizontalAlignment.CENTER : DocumentApp.HorizontalAlignment.RIGHT);
-      const t = p.editAsText();
-      t.setFontFamily('Arial').setFontSize((opt && opt.size) || 11).setBold(!!(opt && opt.bold)).setForegroundColor((opt && opt.color) || '#031233');
-      if (opt && opt.after != null) p.setSpacingAfter(opt.after);
-      return p;
-    };
-    // الرأس: الشعار + اسم الشركة
-    const logo = clearanceAsset_('logo-blue.png');
-    const head = RTL(body.getParagraphs()[0]);
-    head.setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
-    if (logo) head.appendInlineImage(logo).setWidth(110).setHeight(69);
-    para('شركة حلول سلوك التقنية — س.ت 1010636715', { size: 9, color: '#5B6478', after: 6 });
-    para('مخالصة مالية', { center: true, bold: true, size: 18, after: 10 });
-    const table = (title, rows) => {
-      para(title, { bold: true, size: 12, after: 4 });
-      const t = body.appendTable(rows.map(r => [r[1], r[0]])); // القيمة يساراً والعنوان يميناً
-      t.setBorderColor('#C9D3EA');
-      for (let i = 0; i < t.getNumRows(); i++) {
-        const row = t.getRow(i);
-        [0, 1].forEach(j => {
-          const c = row.getCell(j); c.setPaddingTop(5).setPaddingBottom(5);
-          const p = RTL(c.getChild(0).asParagraph()); p.setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
-          p.editAsText().setFontFamily('Arial').setFontSize(11).setBold(j === 1).setForegroundColor('#031233');
-          if (j === 1) c.setBackgroundColor('#E8EEFB').setWidth(140);
-        });
-      }
-      para('', { after: 2 });
-    };
-    table('المعلومات الأولية', [['اسم العميل', d.name], ['رقم الجوال', d.phone], ['البريد الإلكتروني', d.email]]);
-    table('ملخص الالتزامات المالية', [['البرنامج / الخدمة', d.program], ['عدد الساعات', d.hours], ['الإجمالي', d.total],
-      ['تاريخ البدء', usLong_(d.start)], ['تاريخ الإخلاء', usLong_(d.clearDate)]]);
-    CLEARANCE_TEXT.forEach((x, i) => para(x, { size: 11, bold: i === 0, after: 6 }).setLineSpacing(1.4));
-    para('وحرر هذا الإقرار في تاريخ ' + String(signedAt).slice(0, 10).split('-').join('/') + '.', { size: 11, after: 10 });
-    para('الاسم: ' + d.name, { bold: true, size: 11, after: 2 });
-    const sp = para('التوقيع: ', { bold: true, size: 11, after: 6 });
-    sp.appendInlineImage(signature).setWidth(130).setHeight(52);
-    para('منصة سلوكيرا', { bold: true, size: 11, after: 2 });
-    const stamp = clearanceAsset_('stamp.png');
-    if (stamp) { const p = para('', {}); p.appendInlineImage(stamp).setWidth(115).setHeight(115); }
-    const foot = clearanceAsset_('footer.png');
-    if (foot) { const f = doc.addFooter(); const fp = f.getParagraphs()[0]; fp.setAlignment(DocumentApp.HorizontalAlignment.CENTER); fp.appendInlineImage(foot).setWidth(480).setHeight(47); }
-    // سجل التوقيع الإلكتروني
-    body.appendPageBreak();
-    para('سجل التوقيع الإلكتروني', { center: true, bold: true, size: 16, after: 8 });
-    const label = { created: 'إنشاء المستند', sent: 'إرسال للتوقيع', viewed: 'اطلاع المتدرب', signed: 'التوقيع' };
-    const lt = body.appendTable([['التفاصيل', 'الوقت', 'الإجراء']].concat(log.map(x => [
-      [x.by || x.to || '', x.ua ? 'الجهاز: ' + x.ua : ''].filter(String).join(' — '), x.at, label[x.e] || x.e])));
-    lt.setBorderColor('#C9D3EA');
-    for (let i = 0; i < lt.getNumRows(); i++) for (let j = 0; j < 3; j++) {
-      const c = lt.getRow(i).getCell(j); const p = RTL(c.getChild(0).asParagraph());
-      p.setAlignment(DocumentApp.HorizontalAlignment.RIGHT); p.editAsText().setFontFamily('Arial').setFontSize(9).setBold(i === 0).setForegroundColor('#031233');
-      if (i === 0) c.setBackgroundColor('#E8EEFB');
-    }
-    para('', {});
-    para('رقم المستند: ' + d.docId, { size: 10 });
-    para('التحقق من الهوية: دخول المتدرب ببريده الإلكتروني ' + d.email + ' برمز مؤقت أُرسل إليه، ثم الإقرار بالاطلاع والموافقة ورسم التوقيع.', { size: 9, color: '#5B6478' });
-    doc.saveAndClose();
-    const pdf = DriveApp.getFileById(doc.getId()).getAs('application/pdf').setName(name + '.pdf');
-    return pdf;
+    try { // التذييل: شريط سلوكيرا
+      const doc = DocumentApp.openById(id);
+      const body = doc.getBody(); body.setMarginTop(36).setMarginBottom(36).setMarginLeft(50).setMarginRight(50);
+      // الخط موحّد لكل النص (التحويل من HTML لا يثبّته دائماً)، والتوقيع يميناً تحت «التوقيع»
+      body.editAsText().setFontFamily('IBM Plex Sans Arabic');
+      body.getParagraphs().forEach(par => {
+        for (let i = 0; i < par.getNumChildren(); i++) {
+          const ch = par.getChild(i);
+          if (ch.getType() === DocumentApp.ElementType.INLINE_IMAGE && /signature/.test(ch.asInlineImage().getAltDescription() || ''))
+            par.setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
+        }
+      });
+      // سجل التوقيع في صفحة مستقلة
+      const hit = body.findText('سجل التوقيع الإلكتروني');
+      if (hit) { const par = hit.getElement().getParent(); body.insertPageBreak(body.getChildIndex(par)); }
+      const foot = clearanceAsset_('footer.png');
+      if (foot) { const fp = doc.addFooter().getParagraphs()[0]; fp.setAlignment(DocumentApp.HorizontalAlignment.CENTER); fp.appendInlineImage(foot).setWidth(490).setHeight(48); }
+      doc.saveAndClose();
+    } catch (e) { console.error('clearance footer: ' + e); }
+    return DriveApp.getFileById(id).getAs('application/pdf').setName(name + '.pdf');
   } finally {
-    try { DriveApp.getFileById(doc.getId()).setTrashed(true); } catch (e) { }
+    try { DriveApp.getFileById(id).setTrashed(true); } catch (e) { }
   }
 }
 
@@ -1320,6 +1342,7 @@ const ACTIONS = {
   adminClearance: b => adminClearance(b.token, b.id, b.data),
   adminClearanceResend: b => adminClearanceResend(b.token, b.id),
   adminClearanceStart: b => adminClearanceStart(b.token, b.id),
+  adminClearancePreview: b => adminClearancePreview(b.token, b.id),
   adminNameChangeReject: b => adminNameChangeReject(b.token, b.id, b.reason),
   adminStats: b => adminStats(b.token),
   requestNameChange: b => requestNameChange(b.token, b.id, b.data),

@@ -115,9 +115,30 @@ function createEnv(opts = {}) {
       getAliases: () => (opts.aliases || ['care@sulukera.com']),
       sendEmail: (to, subject, body, o) => mails.push(Object.assign({ via: 'GmailApp', to, subject }, o)),
     },
-    UrlFetchApp: { fetch: url => ({ getResponseCode: () => 200, getContentText: () => site, getBlob: () => blob(Buffer.from('PNG'), 'image/png', 'x.png'), _url: url }) },
+    UrlFetchApp: { fetch: (url, o) => {
+      if (/upload\/drive\/v3\/files/.test(url)) { // تحويل HTML ← مستند Google Docs (المخالصة)
+        const raw = Buffer.from((o.payload || []).map(b => b & 255)).toString('utf8');
+        const html = raw.slice(raw.indexOf('<html>'), raw.lastIndexOf('</html>') + 7);
+        const id = newId('DOC');
+        docs[id] = { name: JSON.parse(raw.match(/\{.*\}/)[0]).name, html, text: html.replace(/<[^>]+>/g, '\n').split('\n').map(x => x.trim()).filter(Boolean),
+          images: (html.match(/<img /g) || []).length, trashed: false, saved: false, font: '' };
+        return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ id }) };
+      }
+      return { getResponseCode: () => 200, getContentText: () => site, getBlob: () => blob(Buffer.from('PNG'), 'image/png', 'x.png'), _url: url };
+    } },
+    ScriptApp: { getOAuthToken: () => 'TOKEN' },
     DocumentApp: {
       HorizontalAlignment: { RIGHT: 'R', CENTER: 'C', LEFT: 'L' },
+      ElementType: { INLINE_IMAGE: 'IMG', PARAGRAPH: 'P' },
+      openById(id) {
+        const d = docs[id]; if (!d) throw new Error('no doc');
+        const par = () => ({ getNumChildren: () => 0, setAlignment() { return this; }, appendInlineImage: () => ({ setWidth() { return this; }, setHeight() { return this; } }) });
+        const body = { setMarginTop() { return body; }, setMarginBottom() { return body; }, setMarginLeft() { return body; }, setMarginRight() { return body; },
+          editAsText: () => ({ setFontFamily: f => { d.font = f; } }), getParagraphs: () => [par()],
+          findText: t => (d.html.includes(t) ? { getElement: () => ({ getParent: () => 'P' }) } : null), getChildIndex: () => 3,
+          insertPageBreak: () => { d.pageBreak = true; } };
+        return { getBody: () => body, addFooter: () => ({ getParagraphs: () => [par()] }), saveAndClose() { d.saved = true; } };
+      },
       create(name) {
         const id = newId('DOC'), d = docs[id] = { name, text: [], images: 0, trashed: false, saved: false };
         const chain = new Proxy({}, { get: (t, k) => (k === 'then' ? undefined : () => chain) });

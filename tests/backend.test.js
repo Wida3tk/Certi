@@ -502,7 +502,9 @@ test('المخالصة المالية: المالية ← التوقيع ← PDF
   const doc = Object.values(env.docs)[0];
   const txt = doc.text.join('\n');
   ['SR 3957.15', 'سارة أحمد الحربي', 'أقر وأؤكد', 'سجل التوقيع الإلكتروني', 'اطلاع المتدرب', 'Test Browser'].forEach(k => assert.ok(txt.includes(k), k));
-  assert.strictEqual(doc.trashed, true); assert.ok(doc.images >= 1);
+  assert.strictEqual(doc.trashed, true); assert.ok(doc.images >= 2, 'logo/stamp + signature');
+  assert.match(doc.html, /<body dir="rtl">/); assert.strictEqual(doc.font, 'IBM Plex Sans Arabic'); assert.ok(doc.pageBreak, 'audit log on its own page');
+  assert.ok(doc.html.includes('alt="signature"'));
   // التحميل للمتدرب، والتوقيع مرة ثانية مرفوض
   assert.strictEqual(Buffer.from(env.api('downloadMyClearance', { token: t, id }).data.data, 'base64').toString().slice(0, 4), '%PDF');
   assert.match(env.api('clearanceSign', { token: t, id, data: { agree: true, signature: sig } }).error, /مسبقاً/);

@@ -148,7 +148,9 @@ function renderClr(r) {
   }
   if (r.clearance === CLR.SIGN) {
     box.innerHTML = head + '<p class="hint" style="margin:6px 0">أُرسلت للمتدرب ليوقّعها. البرنامج: ' + esc(c.program) + ' · الإجمالي: <span dir="ltr">' + esc(c.total) +
-      '</span></p><button class="ghost" id="bClrResend">إعادة إرسال رابط التوقيع</button>';
+      '</span></p><div class="actions" style="margin-top:0"><button class="ghost" id="bClrResend">إعادة إرسال رابط التوقيع</button><button class="ghost" id="bClrPrev">معاينة المخالصة (PDF)</button></div>';
+    $('bClrPrev').onclick = async () => { const b = $('bClrPrev'); busy(b, true);
+      try { const f = await api('adminClearancePreview', { token: SESSION.token, id: r.id }); downloadB64(f.name, f.data); } catch (e) { msg($('dMsg'), e.message, 'err'); } busy(b, false); };
     $('bClrResend').onclick = async () => { const b = $('bClrResend'); busy(b, true);
       try { msg($('dMsg'), await api('adminClearanceResend', { token: SESSION.token, id: r.id }), 'ok'); } catch (e) { msg($('dMsg'), e.message, 'err'); } busy(b, false); };
     return;
