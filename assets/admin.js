@@ -212,11 +212,13 @@ async function openReq(id) {
     const r = CUR = Object.assign({}, ALL.find(x => x.id === id) || await api('adminGet', { token: SESSION.token, id: id }));
     // تحميل القالب والخطوط مسبقاً ليكون «توليد ومعاينة» أسرع
     // نسخة القالب: المحفوظة عند إصدار سابق، وإلا الأولى
-    const tpls = r.templates && r.templates.length ? r.templates : [{ dir: r.courseId, label: '' }];
+    const noTpl = Array.isArray(r.templates) && !r.templates.length; // شهادة بلا قالب بعد: الطلب والمخالصة يمشيان، والإصدار مؤجّل
+    const tpls = noTpl ? [] : r.templates && r.templates.length ? r.templates : [{ dir: r.courseId, label: '' }];
     $('dTpl').innerHTML = tpls.map(t => '<option value="' + esc(t.dir) + '">' + esc(t.label || t.dir) + '</option>').join('');
-    $('dTpl').value = tpls.some(t => t.dir === r.template) ? r.template : tpls[0].dir;
+    if (tpls.length) $('dTpl').value = tpls.some(t => t.dir === r.template) ? r.template : tpls[0].dir;
     $('dTplBox').classList.toggle('hide', tpls.length < 2);
-    if (r.status === ST.PENDING || r.status === ST.ISSUED || r.status === ST.HELD) prefetchTpl();
+    $('dNoTpl').classList.toggle('hide', !noTpl);
+    if (!noTpl && (r.status === ST.PENDING || r.status === ST.ISSUED || r.status === ST.HELD)) prefetchTpl();
     $('dTitle').innerHTML = esc(r.nameAr || r.nameEn) + ' ' + pill(r.status);
     // الاسم يُعرض موحّداً (أول حرف كبير)، ويمكن تعديله يدوياً قبل التوليد
     $('dNameEn').value = titleName(r.nameEn || ''); $('dNameAr').value = r.nameAr || '';
@@ -234,7 +236,7 @@ async function openReq(id) {
       row('آخر إجراء بواسطة', r.approvedBy, true) + row('ملاحظات', r.note) + groupInfo(r);
     renderClr(r); renderNc(r);
     checkDays();
-    const canGen = r.status === ST.PENDING || r.status === ST.ISSUED || r.status === ST.HELD;
+    const canGen = !noTpl && (r.status === ST.PENDING || r.status === ST.ISSUED || r.status === ST.HELD);
     $('bGen').classList.toggle('hide', !canGen);
     ['dNameEn', 'dStart', 'dEnd'].forEach(i => $(i).disabled = !canGen);
     renderActs();

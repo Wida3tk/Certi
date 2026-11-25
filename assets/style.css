@@ -189,3 +189,21 @@ footer img { height: 34px; display: block; }
 #aTabs button { padding: 9px 13px; font-size: 14.5px; }
 .act table { min-width: 640px; }
 @media (max-width: 600px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .kpi { padding: 10px 12px; } .kpi-v { font-size: 24px; } }
+
+/* نوع الشهادة: ثلاثة مربعات */
+.cat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.cat { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; text-align: right; background: #fff; color: var(--navy);
+  border: 1.5px solid #CDD3E1; border-radius: 18px; padding: 18px 18px 16px; font-weight: 500; min-height: 104px; }
+.cat:hover { filter: none; }
+@media (hover: hover) { .cat:hover { border-color: var(--blue); background: #F6F8FF; } }
+.cat .ci { white-space: nowrap; unicode-bidi: isolate; font-size: inherit; color: inherit; }
+.cat b { font-size: 17px; line-height: 1.45; }
+.cat span { font-size: 13px; color: var(--muted); line-height: 1.6; font-weight: 400; }
+.cat.on { border-color: var(--blue); background: #EEF2FF; box-shadow: 0 0 0 3px rgba(12, 64, 251, .15); }
+.cat.on b::before { content: '✓ '; color: var(--blue); }
+.cat:focus-visible { outline: 3px solid rgba(12, 64, 251, .4); outline-offset: 2px; }
+.prog-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.prog { display: flex; gap: 10px; align-items: center; margin: 0; padding: 14px 16px; border: 1.5px solid #CDD3E1; border-radius: 14px; cursor: pointer; font-weight: 600; background: #fff; }
+.prog input { width: 18px; height: 18px; accent-color: var(--blue); flex: none; }
+.prog:hover { border-color: var(--blue); }
+.prog:has(input:checked) { border-color: var(--blue); background: #EEF2FF; }

@@ -235,13 +235,17 @@ function courses_() {
       // أسماء بديلة (كما في الفورم القديم) للمطابقة عند الاستيراد، ونسخ القالب (مثل اختلاف المدرب) — الافتراضي مجلد بنفس المعرّف
       aliases: (Array.isArray(c.aliases) ? c.aliases : []).map(String),
       clearance: c.clearance === true,
-      templates: (Array.isArray(c.templates) && c.templates.length ? c.templates : [{ dir: c.id, label: '' }])
+      // تصنيف ما يراه المتدرب: short (الدورات القصيرة) | aba (تحليل السلوك التطبيقي) | obm (إدارة السلوك التنظيمي)، و label اسم مختصر داخل التصنيف
+      category: ['aba', 'obm'].indexOf(c.category) >= 0 ? c.category : 'short', label: String(c.label || c.nameAr),
+      // templates: [] صريحة = لا قالب بعد (يُقبل الطلب ويُؤجَّل الإصدار)؛ بلا الحقل = مجلد بنفس المعرّف
+      templates: (Array.isArray(c.templates) ? c.templates : [{ dir: c.id, label: '' }])
         .filter(t => t && /^[a-z0-9-]+$/.test(String(t.dir))).map(t => ({ dir: String(t.dir), label: String(t.label || '') })) }));
   cache.put('courses', JSON.stringify(list), 600);
   return list;
 }
 function activeCourses_() {
-  return courses_().filter(c => c.active).map(c => ({ id: c.id, nameAr: c.nameAr, name: c.name, type: c.type, minDays: c.minDays, clearance: c.clearance }));
+  return courses_().filter(c => c.active).map(c => ({ id: c.id, nameAr: c.nameAr, name: c.name, type: c.type, minDays: c.minDays, clearance: c.clearance,
+    category: c.category || 'short', label: c.label || c.nameAr }));
 }
 function courseById_(id) { return courses_().filter(c => c.id === String(id))[0] || null; }
 
@@ -462,6 +466,8 @@ function submitRequest(token, d) {
   const active = activeCourses_();
   const courses = wanted.map(id => active.filter(c => c.id === id)[0]);
   if (courses.some(c => !c)) throw new Error((courses.length > 1 ? 'إحدى الدورات المختارة' : 'الدورة المختارة') + ' غير متاحة. حدّث الصفحة واختر من جديد.');
+  // شهادات التصنيفين (تحليل السلوك / إدارة السلوك التنظيمي): شهادة واحدة فقط في الطلب
+  if (courses.length > 1 && courses.some(c => (c.category || 'short') !== 'short')) throw new Error('هذه الشهادة تُطلب وحدها. اختر شهادة واحدة في كل طلب.');
   if (!Array.isArray(d.survey) || d.survey.length !== CONFIG.SURVEY.length ||
     d.survey.some((v, i) => !(Number(v) >= 1 && Number(v) <= CONFIG.SURVEY[i].max && Number(v) % 1 === 0)))
     throw new Error('أكمل جميع أسئلة استبيان الرضا.');
@@ -606,6 +612,7 @@ function adminApprove(token, d) {
   if (course && course.minDays && daysInclusive_(d.start, d.end) < course.minDays)
     throw new Error('مدة الإتمام ' + daysInclusive_(d.start, d.end) + ' أيام، وهذه الشهادة تشترط ' + course.minDays + ' أيام على الأقل. لا يمكن إصدارها.');
   const tpls = course ? course.templates : [{ dir: String(r['معرّف الدورة']), label: '' }];
+  if (!tpls.length) throw new Error('لا يوجد قالب لهذه الشهادة بعد. يُصدر بعد إضافة القالب.');
   const tpl = String(d.template || tpls[0].dir);
   if (!tpls.some(t => t.dir === tpl)) throw new Error('القالب المختار لا يخص هذه الدورة.');
   const nameEn = String(d.nameEn || r['الاسم بالإنجليزي']).replace(/\s+/g, ' ').trim();

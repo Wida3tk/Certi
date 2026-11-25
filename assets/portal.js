@@ -191,23 +191,45 @@ $('bSign').onclick = async () => {
   busy(b, false);
 };
 
-/* ---------- اختيار دورة أو أكثر ---------- */
+/* ---------- نوع الشهادة ← دورة أو أكثر (القصيرة) أو شهادة واحدة (التصنيفان الآخران) ---------- */
 const PICKED = new Set();
+let CAT = '';
+const catOf = c => c.category || 'short';
 function renderCourses() {
   const item = c => '<label class="course-item"><input type="checkbox" value="' + esc(c.id) + '"' + (PICKED.has(c.id) ? ' checked' : '') + '><span>' + esc(c.nameAr) + '</span></label>';
-  const shorts = COURSES.filter(c => c.type !== 'long'), longs = COURSES.filter(c => c.type === 'long');
-  $('courseList').innerHTML = longs.length
-    ? '<div class="course-group">الدورات القصيرة</div>' + shorts.map(item).join('') + '<div class="course-group">البرامج الطويلة</div>' + longs.map(item).join('')
-    : shorts.map(item).join('');
+  $('courseList').innerHTML = COURSES.filter(c => catOf(c) === 'short').map(item).join('');
+  // المربعات: يظهر التصنيف إن كانت فيه شهادة متاحة، وتحته أسماؤها المختصرة
+  document.querySelectorAll('#catPick .cat').forEach(b => {
+    const list = COURSES.filter(c => catOf(c) === b.dataset.cat);
+    b.classList.toggle('hide', !list.length);
+    const sub = b.querySelector('.cat-sub'); if (sub) sub.innerHTML = list.map(c => '<span class="ci">' + esc(c.label || c.nameAr) + '</span>').join(' · ');
+  });
+  setCat(CAT);
   filterCourses(); updatePicked();
 }
+function setCat(cat) {
+  if (cat !== CAT) PICKED.clear();
+  CAT = cat;
+  document.querySelectorAll('#catPick .cat').forEach(b => { const on = b.dataset.cat === cat; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+  $('shortBox').classList.toggle('hide', cat !== 'short');
+  $('progBox').classList.toggle('hide', !cat || cat === 'short');
+  $('formRest').classList.toggle('hide', !cat);
+  if (cat && cat !== 'short') {
+    $('progList').innerHTML = COURSES.filter(c => catOf(c) === cat).map(c => '<label class="prog"><input type="radio" name="prog" value="' + esc(c.id) + '"' +
+      (PICKED.has(c.id) ? ' checked' : '') + '><span>' + esc(c.label || c.nameAr) + '</span></label>').join('');
+  }
+  if (cat === 'short') document.querySelectorAll('#courseList input').forEach(i => i.checked = PICKED.has(i.value));
+  updatePicked();
+}
+$('catPick').addEventListener('click', e => { const b = e.target.closest('.cat'); if (b) setCat(b.dataset.cat); });
+$('progList').addEventListener('change', e => { if (e.target.name !== 'prog') return; PICKED.clear(); PICKED.add(e.target.value); updatePicked(); });
 function filterCourses() {
   const q = $('courseSearch').value.trim();
   document.querySelectorAll('#courseList .course-item').forEach(el => el.classList.toggle('hide', !!q && el.textContent.indexOf(q) < 0));
 }
 function updatePicked() {
   const sel = COURSES.filter(c => PICKED.has(c.id));
-  $('courseCount').textContent = sel.length ? 'اخترت ' + (sel.length === 1 ? 'دورة واحدة' : sel.length + ' دورات') : '';
+  $('courseCount').textContent = CAT === 'short' && sel.length ? 'اخترت ' + (sel.length === 1 ? 'دورة واحدة' : sel.length + ' دورات') : '';
   const ruled = sel.filter(c => c.minDays);
   $('courseRule').classList.toggle('hide', !ruled.length);
   if (ruled.length) $('courseRule').textContent = '⚠️ ' + ruled.map(c => '«' + c.nameAr + '»').join('، ') +
@@ -230,7 +252,8 @@ $('bSubmit').onclick = async () => {
     const v = id => $(id).value.replace(/\s+/g, ' ').trim();
     $('fNameEn').value = titleName($('fNameEn').value);
     const nameEn = v('fNameEn'), nameAr = v('fNameAr');
-    if (!PICKED.size) throw new Error('اختر الدورة (أو الدورات) التي أتممتها.');
+    if (!CAT) throw new Error('اختر نوع الشهادة أولاً.');
+    if (!PICKED.size) throw new Error(CAT === 'short' ? 'اختر الدورة (أو الدورات) التي أتممتها.' : 'اختر الشهادة التي أتممتها.');
     if (!NAME_AR_RE.test(nameAr)) throw new Error('اكتب اسمك الثلاثي بالعربية.');
     if (!nameEn) throw new Error('اكتب اسمك بالإنجليزية كما تريده على الشهادة.');
     if (!NAME_RE.test(nameEn)) throw new Error('الاسم يُكتب بالحروف الإنجليزية فقط (مثال: Sara Ahmed Al-Harbi).');
@@ -261,7 +284,7 @@ $('bSubmit').onclick = async () => {
       document.querySelector('.issueDays').textContent + ' وتصلك على بريدك، وتجدها أيضاً في «شهاداتي».' +
       (skipped.length ? '\nلم يُضف: ' + skipped.map(x => x.course + ' (' + x.reason + ')').join('، ') : ''), 'ok');
     ['fNameEn', 'fNameAr', 'fPlatformEmail', 'fCity', 'fPhone', 'fComment', 'courseSearch'].forEach(i => $(i).value = '');
-    PICKED.clear(); renderCourses();
+    PICKED.clear(); CAT = ''; renderCourses();
     ANS = ANS.map(() => 0);
     document.querySelectorAll('.rate button').forEach(x => x.classList.remove('on'));
     if (requests) renderMine(requests);

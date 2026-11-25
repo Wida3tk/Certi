@@ -45,7 +45,7 @@ const server = http.createServer((req, res) => {
   }
   // 1) طلب وإصدار
   await trainee('omar@example.com');
-  await page.check('#courseList input[value="persuasion-influence"]');
+  await page.click('.cat[data-cat="short"]'); await page.check('#courseList input[value="persuasion-influence"]');
   await page.fill('#fNameAr', 'عمر سالم الدوسري'); await page.fill('#fNameEn', 'Omar Salim Aldosari');
   await page.fill('#fPlatformEmail', 'omar.p@example.com'); await page.fill('#fCity', 'جدة'); await page.fill('#fPhone', '0561234567');
   for (let i = 0; i < 11; i++) await page.click('.rate[data-i="' + i + '"] button[data-n="' + (i === 10 ? 9 : 4 + (i % 2)) + '"]');

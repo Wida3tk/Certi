@@ -643,4 +643,26 @@ test('لوحة المتابعة: الأعداد ومدة الإصدار بأيا
   assert.strictEqual(env.ctx.workDays_(u(2026, 11, 22), u(2026, 11, 26)), 4);
 });
 
+test('أنواع الشهادات: شهادة واحدة لتصنيفي تحليل السلوك وإدارة السلوك، وشهادة بلا قالب تُطلب ويُؤجَّل إصدارها', () => {
+  const env = createEnv({ coursesJson: JSON.stringify([
+    { id: 'persuasion-influence', nameAr: 'فن الإقناع والتأثير', name: 'Persuasion', type: 'short', active: true },
+    { id: 'obm-p', nameAr: 'رخصة الممارس', name: 'OBM-P', type: 'long', category: 'obm', label: 'الممارس (OBM-P)', active: true },
+    { id: 'obm-e', nameAr: 'رخصة الخبير', name: 'OBM-E', type: 'long', category: 'obm', label: 'الخبير (OBM-E)', active: true },
+    { id: 'qba', nameAr: 'شهادة محلل السلوك (QBA)', name: 'QBA', type: 'long', category: 'aba', label: 'محلل السلوك (QBA)', clearance: true, active: true, templates: [] }]) });
+  env.ctx.setup();
+  const t = login(env, 'cat@x.com'); const ta = adminLogin(env, ADMIN);
+  const cs = env.api('getMyData', { token: t }).data.courses;
+  assert.strictEqual(cs.find(c => c.id === 'qba').category, 'aba'); assert.strictEqual(cs.find(c => c.id === 'obm-e').label, 'الخبير (OBM-E)');
+  assert.strictEqual(cs.find(c => c.id === 'persuasion-influence').category, 'short');
+  assert.match(env.api('submitRequest', { token: t, data: form({ courseIds: ['obm-p', 'obm-e'] }) }).error, /وحدها/);
+  assert.match(env.api('submitRequest', { token: t, data: form({ courseIds: ['persuasion-influence', 'qba'] }) }).error, /وحدها/);
+  const id = env.api('submitRequest', { token: t, data: form({ courseIds: ['qba'] }) }).data.id;
+  const g = env.api('adminGet', { token: ta, id }).data;
+  assert.strictEqual(g.clearance, 'بانتظار المالية'); assert.deepStrictEqual(Array.from(g.templates), []);
+  const num = env.api('adminReserveNumber', { token: ta, id }).data;
+  assert.match(env.api('adminApprove', { token: ta, data: { id, certNo: num.certNo, pdf: PDF, start: '2026-01-01', end: '2026-02-01' } }).error, /لا يوجد قالب/);
+  // المخالصة تمشي رغم عدم وجود القالب
+  assert.strictEqual(env.api('adminClearance', { token: ta, id, data: { outcome: 'none' } }).ok, true);
+});
+
 console.log('\n' + passed + ' اختبار ناجح' + (process.exitCode ? ' — يوجد فشل' : ''));

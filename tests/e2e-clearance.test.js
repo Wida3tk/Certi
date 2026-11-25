@@ -18,7 +18,9 @@ const server = http.createServer((req, res) => {
   const SITE = 'http://localhost:' + server.address().port + '/';
   const env = createEnv({ coursesJson: JSON.stringify([
     { id: 'obm-c', nameAr: 'شهادة إدارة السلوك التنظيمي - رخصة الاستشاري (OBM-C)', name: 'Organizational Behavior Management - Consultant (OBM-C)',
-      type: 'long', clearance: true, active: true, templates: [{ dir: 'obmc-mossab', label: 'مصعب' }] }]) });
+      type: 'long', category: 'obm', label: 'المستشار (OBM-C)', clearance: true, active: true, templates: [{ dir: 'obmc-mossab', label: 'مصعب' }] },
+    { id: 'obm-p', nameAr: 'رخصة الممارس', name: 'OBM-P', type: 'long', category: 'obm', label: 'الممارس (OBM-P)', active: true },
+    { id: 'persuasion-influence', nameAr: 'فن الإقناع والتأثير', name: 'Persuasion', type: 'short', active: true }]) });
   env.ctx.setup(); env.props.SITE_URL = SITE;
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
@@ -36,7 +38,14 @@ const server = http.createServer((req, res) => {
   }
   // 1) المتدرب يطلب
   await trainee('lina@example.com');
-  await page.check('#courseList input[value="obm-c"]');
+  // المربعات الثلاثة: تحليل السلوك بلا شهادات متاحة هنا فيُخفى، وإدارة السلوك التنظيمي تعرض خياراتها
+  assert.ok(await page.isHidden('.cat[data-cat="aba"]'));
+  assert.ok(await page.isHidden('#formRest'), 'form hidden until a type is chosen');
+  await page.click('.cat[data-cat="obm"]');
+  const pl = await page.textContent('#progList'); assert.ok(/الممارس/.test(pl) && /المستشار/.test(pl), pl);
+  assert.doesNotMatch(await page.textContent('#vPortal'), /برنامج طويل|البرامج الطويلة/);
+  await page.check('#progList input[value="obm-c"]');
+  await page.screenshot({ path: path.join(OUT, 'cat-obm.png'), fullPage: false, clip: { x: 0, y: 380, width: 1280, height: 520 } });
   await page.fill('#fNameAr', 'لينا خالد العتيبي'); await page.fill('#fNameEn', 'LINA KHALID ALOTAIBI');
   await page.fill('#fPlatformEmail', 'lina.p@example.com'); await page.fill('#fCity', 'الرياض'); await page.fill('#fPhone', '0551234567');
   for (let i = 0; i < 11; i++) await page.click('.rate[data-i="' + i + '"] button[data-n="5"]');

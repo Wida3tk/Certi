@@ -67,13 +67,25 @@
     <div class="card">
       <h2>طلب شهادة إتمام</h2>
 
-      <div class="section-title"><span class="num">1</span>الدورات</div>
-      <p class="hint" style="margin:0 0 8px">اختر الدورة التي أتممتها، ويمكنك اختيار أكثر من دورة في الطلب نفسه. تُراجَع كل شهادة على حدة.</p>
-      <input id="courseSearch" type="search" placeholder="ابحث عن الدورة بالاسم" aria-label="ابحث عن الدورة">
-      <div id="courseList" class="course-list" role="group" aria-label="الدورات"></div>
+      <div class="section-title"><span class="num">1</span>نوع الشهادة</div>
+      <div id="catPick" class="cat-cards" role="radiogroup" aria-label="نوع الشهادة">
+        <button type="button" class="cat" data-cat="short" role="radio" aria-checked="false"><b>الدورات القصيرة</b><span>اختر دورة أو أكثر</span></button>
+        <button type="button" class="cat" data-cat="aba" role="radio" aria-checked="false"><b>شهادة تحليل السلوك التطبيقي</b><span class="cat-sub"></span></button>
+        <button type="button" class="cat" data-cat="obm" role="radio" aria-checked="false"><b>شهادة إدارة السلوك التنظيمي</b><span class="cat-sub"></span></button>
+      </div>
+      <div id="shortBox" class="hide">
+        <p class="hint" style="margin:14px 0 8px">اختر الدورة التي أتممتها، ويمكنك اختيار أكثر من دورة في الطلب نفسه. تُراجَع كل شهادة على حدة.</p>
+        <input id="courseSearch" type="search" placeholder="ابحث عن الدورة بالاسم" aria-label="ابحث عن الدورة">
+        <div id="courseList" class="course-list" role="group" aria-label="الدورات"></div>
+      </div>
+      <div id="progBox" class="hide">
+        <p class="hint" style="margin:14px 0 8px">اختر الشهادة التي أتممتها:</p>
+        <div id="progList" class="prog-list" role="radiogroup"></div>
+      </div>
       <div id="courseCount" class="hint" aria-live="polite"></div>
       <div id="courseRule" class="warnbox hide"></div>
 
+      <div id="formRest" class="hide">
       <div class="section-title"><span class="num">2</span>بياناتك</div>
       <div class="row">
         <div><label for="fNameAr">الاسم الثلاثي بالعربية</label><input id="fNameAr" autocomplete="name" maxlength="80" placeholder="مثال: سارة أحمد الحربي"></div>
@@ -97,6 +109,7 @@
       <textarea id="fComment" maxlength="2000"></textarea>
 
       <div class="actions"><button id="bSubmit">إرسال الطلب</button></div>
+      </div>
       <div id="pMsg" class="msg" role="alert"></div>
     </div>
   </div>
