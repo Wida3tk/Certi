@@ -472,7 +472,7 @@ test('المخالصة المالية: المالية ← التوقيع ← PDF
   assert.strictEqual(env.api('adminGet', { token: ta, id }).data.clearance, 'بانتظار السداد');
   // تم السداد بلا بيانات ← خطأ، ثم ببيانات ← بانتظار التوقيع وإيميل للمتدرب
   assert.match(env.api('adminClearance', { token: ta, id, data: { outcome: 'paid' } }).error, /أكملي/);
-  const cd = { outcome: 'paid', program: 'برنامج OBM-C', hours: '72 ساعة', total: 'SR 3957.15', start: '2025-10-21', clearDate: '2026-11-18' };
+  const cd = { outcome: 'paid', program: 'برنامج OBM-C', hours: '6 مواد', total: 'SR 3957.15', start: '2025-10-21', clearDate: '2026-11-18' };
   env.mails.length = 0;
   const cr = env.api('adminClearance', { token: ta, id, data: cd });
   assert.strictEqual(cr.ok, true, cr.error); assert.match(cr.data, /CLR-/);

@@ -159,7 +159,7 @@ function renderClr(r) {
   box.innerHTML = head +
     '<p class="hint" style="margin:6px 0 10px">أكملي بيانات المخالصة ثم اختاري النتيجة. عند «لا يوجد مبلغ» أو «تم السداد» تُرسل المخالصة للمتدرب ليوقّعها، وتُرسل شهادته تلقائياً بعد التوقيع إن كانت معتمدة.</p>' +
     '<div class="row"><div><label for="cProg">البرنامج / الخدمة</label><input id="cProg" value="' + v('program', r.course) + '"></div>' +
-    '<div><label for="cHours">عدد الساعات</label><input id="cHours" value="' + v('hours') + '" placeholder="مثال: 72 ساعة"></div>' +
+    '<div><label for="cHours">عدد المواد</label><input id="cHours" value="' + v('hours') + '" placeholder="مثال: 6 مواد"></div>' +
     '<div><label for="cTotal">الإجمالي</label><input id="cTotal" dir="ltr" value="' + v('total') + '" placeholder="SR 3957.15"></div></div>' +
     '<div class="row"><div><label for="cStart">تاريخ البدء</label><input id="cStart" type="date" value="' + v('start', r.start) + '"></div>' +
     '<div><label for="cClear">تاريخ الإخلاء</label><input id="cClear" type="date" value="' + v('clearDate', today()) + '"></div><div></div></div>' +

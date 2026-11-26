@@ -135,7 +135,7 @@ function clrDocHtml(d) {
   return '<div class="clr-head"><img src="assets/img/clearance/logo-blue.png" alt="سلوكيرا"><span>شركة حلول سلوك التقنية — س.ت 1010636715</span></div>' +
     '<h3 class="clr-title">مخالصة مالية</h3>' +
     '<h4>المعلومات الأولية</h4><table class="clr-t">' + row('اسم العميل', d.name) + row('رقم الجوال', d.phone, true) + row('البريد الإلكتروني', d.email, true) + '</table>' +
-    '<h4>ملخص الالتزامات المالية</h4><table class="clr-t">' + row('البرنامج / الخدمة', d.program) + row('عدد الساعات', d.hours) + row('الإجمالي', d.total, true) +
+    '<h4>ملخص الالتزامات المالية</h4><table class="clr-t">' + row('البرنامج / الخدمة', d.program) + row('عدد المواد', d.hours) + row('الإجمالي', d.total, true) +
       row('تاريخ البدء', usLong(d.start), true) + row('تاريخ الإخلاء', usLong(d.clearDate), true) + '</table>' +
     d.text.map((x, i) => '<p' + (i === 0 ? ' style="font-weight:700"' : '') + '>' + esc(x) + '</p>').join('') +
     '<p class="hint">رقم المستند: <span dir="ltr">' + esc(d.docId) + '</span></p>';

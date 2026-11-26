@@ -1146,7 +1146,7 @@ function adminClearance(token, id, d) {
     return 'سُجّل «يوجد مبلغ مستحق». بعد التواصل مع المتدرب والسداد اختاري «تم السداد» لإصدار المخالصة للتوقيع.';
   }
   if (['nodue', 'paid'].indexOf(d.outcome) < 0) throw new Error('اختاري نتيجة المخالصة.');
-  if (!data.program || !data.hours || !data.total || !data.start || !data.clearDate) throw new Error('أكملي بيانات المخالصة: البرنامج، عدد الساعات، الإجمالي، تاريخ البدء، تاريخ الإخلاء.');
+  if (!data.program || !data.hours || !data.total || !data.start || !data.clearDate) throw new Error('أكملي بيانات المخالصة: البرنامج، عدد المواد، الإجمالي، تاريخ البدء، تاريخ الإخلاء.');
   data.outcome = d.outcome;
   data.docId = data.docId || ('CLR-' + Utilities.formatDate(new Date(), tz_(), 'yyyy') + '-' + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase());
   data.issuedAt = now_();
@@ -1297,7 +1297,7 @@ function clearanceHtml_(d, img, log, signedAt) {
     p('مخالصة مالية', 'text-align:center;font-size:19pt;font-weight:bold;margin:4pt 0 2pt 0') +
     p('رقم المستند: ' + ltr(d.docId), 'text-align:center;font-size:9pt;color:' + M + ';margin:0 0 6pt 0') +
     table('المعلومات الأولية', [['اسم العميل', esc_(d.name)], ['رقم الجوال', ltr(d.phone)], ['البريد الإلكتروني', ltr(d.email)]]) +
-    table('ملخص الالتزامات المالية', [['البرنامج / الخدمة', esc_(d.program)], ['عدد الساعات', esc_(d.hours)], ['الإجمالي', ltr(d.total)],
+    table('ملخص الالتزامات المالية', [['البرنامج / الخدمة', esc_(d.program)], ['عدد المواد', esc_(d.hours)], ['الإجمالي', ltr(d.total)],
       ['تاريخ البدء', arDate_(d.start)], ['تاريخ الإخلاء', arDate_(d.clearDate)]]) +
     p('الإقرار', 'font-weight:bold;font-size:11.5pt;margin:10pt 0 4pt 0') +
     CLEARANCE_TEXT.map((x, i) => p(esc_(x), 'text-align:justify;line-height:1.6;' + (i === 0 ? 'font-weight:bold;' : ''))).join('') +

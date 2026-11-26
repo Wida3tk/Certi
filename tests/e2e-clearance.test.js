@@ -66,7 +66,7 @@ const server = http.createServer((req, res) => {
   await page.waitForSelector('#dClr:not(.hide) [data-o="due"]');
   await page.click('[data-o="due"]');
   await page.waitForSelector('#dClr [data-o="paid"]');
-  await page.fill('#cHours', '72 ساعة'); await page.fill('#cTotal', 'SR 4,500'); await page.fill('#cStart', '2026-03-01');
+  await page.fill('#cHours', '6 مواد'); await page.fill('#cTotal', 'SR 4,500'); await page.fill('#cStart', '2026-03-01');
   await page.screenshot({ path: path.join(OUT, 'clr-1-finance.png'), fullPage: true });
   await page.click('[data-o="paid"]');
   await page.waitForFunction(() => /أُصدرت المخالصة/.test(document.querySelector('#dMsg').textContent));
