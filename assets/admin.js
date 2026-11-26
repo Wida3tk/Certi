@@ -252,7 +252,8 @@ function renderActs() {
   const s = CUR.status, a = [];
   if (GEN) {
     a.push('<button class="ghost" id="bTest">إرسال تجريبي لبريدي</button>');
-    a.push('<button class="ok" id="bOk">' + (s === ST.ISSUED ? 'إعادة الإصدار والإرسال' : 'اعتماد وإرسال للمتدرب') + '</button>');
+    const held = CUR.clearance && CUR.clearance !== CLR.SIGNED && CUR.clearance !== CLR.NONE;
+    a.push('<button class="ok" id="bOk">' + (s === ST.ISSUED ? 'إعادة الإصدار والإرسال' : held ? 'اعتماد (تُرسل بعد توقيع المخالصة)' : 'اعتماد وإرسال للمتدرب') + '</button>');
   }
   if (s === ST.PENDING) a.push('<button class="danger" id="bRej">رفض</button>');
   if (s === ST.ISSUED) a.push('<button class="danger" id="bRevoke">إلغاء الشهادة</button>');
